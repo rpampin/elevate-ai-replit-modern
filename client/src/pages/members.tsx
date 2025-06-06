@@ -8,7 +8,8 @@ import ViewMemberModal from "@/components/modals/view-member-modal";
 import EditMemberModal from "@/components/modals/edit-member-modal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Target, Eye, Edit2, Trash2 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Target, Eye, Edit2, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import { getCategoryColor, getInitials } from "@/lib/constants";
 import { useAutoToast } from "@/hooks/use-auto-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -35,10 +36,35 @@ export default function Members() {
   const [selectedMember, setSelectedMember] = useState<MemberWithSkills | null>(null);
   const [memberToDelete, setMemberToDelete] = useState<MemberWithSkills | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const { data: members, isLoading } = useQuery({
     queryKey: ["/api/members", { name: searchTerm }],
   });
+
+  // Filter and paginate members
+  const allMembers = Array.isArray(members) ? members as MemberWithSkills[] : [];
+  const filteredMembers = allMembers.filter((member: MemberWithSkills) =>
+    member.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    member.email.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const totalPages = Math.ceil(filteredMembers.length / pageSize);
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedMembers = filteredMembers.slice(startIndex, startIndex + pageSize);
+
+  // Reset page when search changes
+  const handleSearchChange = (term: string) => {
+    setSearchTerm(term);
+    setCurrentPage(1);
+  };
+
+  // Handle page size change
+  const handlePageSizeChange = (newPageSize: string) => {
+    setPageSize(parseInt(newPageSize));
+    setCurrentPage(1);
+  };
 
   const deleteMemberMutation = useMutation({
     mutationFn: async (memberId: number) => {
@@ -206,12 +232,56 @@ export default function Members() {
 
       <main className="p-6">
         <DataTable
-          data={members || []}
+          data={paginatedMembers}
           columns={columns}
           searchPlaceholder="Buscar miembros..."
-          onSearch={setSearchTerm}
+          onSearch={handleSearchChange}
           isLoading={isLoading}
         />
+        
+        {/* Pagination Controls */}
+        <div className="flex items-center justify-between px-2 py-4">
+          <div className="flex items-center space-x-6 lg:space-x-8">
+            <div className="flex items-center space-x-2">
+              <p className="text-sm font-medium">Items per page</p>
+              <Select value={pageSize.toString()} onValueChange={handlePageSizeChange}>
+                <SelectTrigger className="h-8 w-[70px]">
+                  <SelectValue placeholder={pageSize} />
+                </SelectTrigger>
+                <SelectContent side="top">
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="20">20</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex w-[100px] items-center justify-center text-sm font-medium">
+              Page {currentPage} of {totalPages}
+            </div>
+            <div className="text-sm text-gray-700 dark:text-gray-300">
+              Showing {startIndex + 1} to {Math.min(startIndex + pageSize, filteredMembers.length)} of {filteredMembers.length} members
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              className="h-8 w-8 p-0"
+              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+              disabled={currentPage <= 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              className="h-8 w-8 p-0"
+              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+              disabled={currentPage >= totalPages}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
       </main>
 
       <AddMemberModal

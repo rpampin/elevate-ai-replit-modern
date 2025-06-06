@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { useAutoToast } from "@/hooks/use-auto-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Plus, Trash2, Ruler, X, Edit2, ChevronUp, ChevronDown, GripVertical } from "lucide-react";
+import { Plus, Trash2, Ruler, X, Edit2, ChevronUp, ChevronDown, GripVertical, ChevronLeft, ChevronRight } from "lucide-react";
 import type { Scale } from "@shared/schema";
 
 const scaleSchema = z.object({
@@ -36,6 +36,8 @@ export default function Scales() {
   const [scaleToDelete, setScaleToDelete] = useState<Scale | null>(null);
   const [scaleToEdit, setScaleToEdit] = useState<Scale | null>(null);
   const [currentValue, setCurrentValue] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const { showToast } = useAutoToast();
   const queryClient = useQueryClient();
 
@@ -118,9 +120,27 @@ export default function Scales() {
     },
   });
 
-  const filteredScales = (scales || []).filter((scale: Scale) =>
+  // Filter and paginate scales
+  const allScales = Array.isArray(scales) ? scales as Scale[] : [];
+  const filteredScales = allScales.filter((scale: Scale) =>
     scale.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const totalPages = Math.ceil(filteredScales.length / pageSize);
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedScales = filteredScales.slice(startIndex, startIndex + pageSize);
+
+  // Reset page when search changes
+  const handleSearchChange = (term: string) => {
+    setSearchTerm(term);
+    setCurrentPage(1);
+  };
+
+  // Handle page size change
+  const handlePageSizeChange = (newPageSize: string) => {
+    setPageSize(parseInt(newPageSize));
+    setCurrentPage(1);
+  };
 
   const handleAddValue = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && currentValue.trim()) {
@@ -321,12 +341,56 @@ export default function Scales() {
         </div>
 
         <DataTable
-          data={filteredScales}
+          data={paginatedScales}
           columns={columns}
           searchPlaceholder="Search scales..."
-          onSearch={setSearchTerm}
+          onSearch={handleSearchChange}
           isLoading={isLoading}
         />
+        
+        {/* Pagination Controls */}
+        <div className="flex items-center justify-between px-2 py-4">
+          <div className="flex items-center space-x-6 lg:space-x-8">
+            <div className="flex items-center space-x-2">
+              <p className="text-sm font-medium">Items per page</p>
+              <Select value={pageSize.toString()} onValueChange={handlePageSizeChange}>
+                <SelectTrigger className="h-8 w-[70px]">
+                  <SelectValue placeholder={pageSize} />
+                </SelectTrigger>
+                <SelectContent side="top">
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="20">20</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex w-[100px] items-center justify-center text-sm font-medium">
+              Page {currentPage} of {totalPages}
+            </div>
+            <div className="text-sm text-gray-700 dark:text-gray-300">
+              Showing {startIndex + 1} to {Math.min(startIndex + pageSize, filteredScales.length)} of {filteredScales.length} scales
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              className="h-8 w-8 p-0"
+              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+              disabled={currentPage <= 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              className="h-8 w-8 p-0"
+              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+              disabled={currentPage >= totalPages}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
 
         {/* Add Scale Dialog */}
         <Dialog open={showAddModal} onOpenChange={handleCloseAddModal}>
