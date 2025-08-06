@@ -8,6 +8,8 @@ interface HeaderProps {
   onAddClick?: () => void;
   onImportClick?: () => void;
   showActions?: boolean;
+  showAddTechie?: boolean;
+  addButtonText?: string;
 }
 
 export default function Header({ 
@@ -15,7 +17,9 @@ export default function Header({
   subtitle, 
   onAddClick, 
   onImportClick, 
-  showActions = true 
+  showActions = true,
+  showAddTechie = false,
+  addButtonText
 }: HeaderProps) {
   const { t } = useLanguage();
 
@@ -28,20 +32,24 @@ export default function Header({
         </div>
         {showActions && (
           <div className="flex items-center space-x-4">
-            <Button 
-              onClick={onAddClick}
-              className="bg-primary hover:bg-primary/90 text-white"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              {t("addTechie")}
-            </Button>
-            <Button 
-              variant="outline"
-              onClick={onImportClick}
-            >
-              <FileSpreadsheet className="w-4 h-4 mr-2" />
-              {t("importExcel")}
-            </Button>
+            {showAddTechie && (
+              <Button 
+                onClick={onAddClick}
+                className="bg-primary hover:bg-primary/90 text-white"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                {t("addTechie")}
+              </Button>
+            )}
+            {!showAddTechie && addButtonText && onAddClick && (
+              <Button 
+                onClick={onAddClick}
+                className="bg-primary hover:bg-primary/90 text-white"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                {addButtonText}
+              </Button>
+            )}
           </div>
         )}
       </div>

@@ -1,32 +1,20 @@
-import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { format } from "date-fns";
+import { useLocation } from "wouter";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar } from "@/components/ui/calendar";
 import { useAutoToast } from "@/hooks/use-auto-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { insertMemberSchema } from "@shared/schema";
-import { Check, ChevronsUpDown, CalendarIcon } from "lucide-react";
+import type { Location } from "@shared/schema";
+import { ProfilePictureUpload } from "@/components/ui/profile-picture-upload";
 import { cn } from "@/lib/utils";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import DatePicker from "react-datepicker";
+import InputMask from "react-input-mask";
+import "react-datepicker/dist/react-datepicker.css";
 import {
   Form,
   FormControl,
@@ -36,31 +24,6 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 
-// Default client list that will be extended as new clients are added
-const DEFAULT_CLIENTS = [
-  "Talent Pool",
-  "Lunavi", 
-  "TechCorp",
-  "InnovateLab"
-];
-
-// Default location list that will be extended as new locations are added
-const DEFAULT_LOCATIONS = [
-  "Remote",
-  "Spain",
-  "Argentina",
-  "Mexico",
-  "Colombia",
-  "Chile",
-  "United States",
-  "Canada",
-  "United Kingdom",
-  "Germany",
-  "France",
-  "Peru",
-  "Brazil"
-];
-
 const TECHIE_CATEGORIES = [
   "Starter",
   "Builder",
@@ -68,7 +31,15 @@ const TECHIE_CATEGORIES = [
   "Wizard"
 ];
 
-const addMemberSchema = insertMemberSchema.omit({ id: true });
+const addMemberSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  email: z.string().email("Valid email is required"),
+  profilePicture: z.string().nullable().optional(),
+  hireDate: z.date().nullable().optional(),
+  category: z.string().optional(),
+  location: z.string().optional(),
+});
+
 type AddMemberForm = z.infer<typeof addMemberSchema>;
 
 interface AddMemberModalProps {
@@ -79,48 +50,22 @@ interface AddMemberModalProps {
 export default function AddMemberModal({ open, onOpenChange }: AddMemberModalProps) {
   const { showToast } = useAutoToast();
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
   
-  // Client management state
-  const [availableClients, setAvailableClients] = useState<string[]>(() => {
-    const savedClients = localStorage.getItem('techie-skills-clients');
-    return savedClients ? JSON.parse(savedClients) : DEFAULT_CLIENTS;
+  // Load locations data from API
+  const { data: locations = [] } = useQuery<Location[]>({
+    queryKey: ['/api/locations']
   });
-  const [clientComboOpen, setClientComboOpen] = useState(false);
-
-  // Location management state
-  const [availableLocations, setAvailableLocations] = useState<string[]>(() => {
-    const savedLocations = localStorage.getItem('techie-skills-locations');
-    return savedLocations ? JSON.parse(savedLocations) : DEFAULT_LOCATIONS;
-  });
-  const [locationComboOpen, setLocationComboOpen] = useState(false);
-
-  // Function to add new client and save to localStorage
-  const addNewClient = (newClient: string) => {
-    if (newClient && !availableClients.includes(newClient)) {
-      const updatedClients = [...availableClients, newClient];
-      setAvailableClients(updatedClients);
-      localStorage.setItem('techie-skills-clients', JSON.stringify(updatedClients));
-    }
-  };
-
-  // Function to add new location and save to localStorage
-  const addNewLocation = (newLocation: string) => {
-    if (newLocation && !availableLocations.includes(newLocation)) {
-      const updatedLocations = [...availableLocations, newLocation];
-      setAvailableLocations(updatedLocations);
-      localStorage.setItem('techie-skills-locations', JSON.stringify(updatedLocations));
-    }
-  };
 
   const form = useForm<AddMemberForm>({
     resolver: zodResolver(addMemberSchema),
     defaultValues: {
-      fullName: "",
+      name: "",
       email: "",
-      category: "Starter",
-      location: "Spain",
+      profilePicture: null,
       hireDate: null,
-      currentClient: "Talent Pool",
+      category: "Starter",
+      location: "",
     },
   });
 
@@ -128,7 +73,7 @@ export default function AddMemberModal({ open, onOpenChange }: AddMemberModalPro
     mutationFn: async (data: AddMemberForm) => {
       return apiRequest("POST", "/api/members", data);
     },
-    onSuccess: () => {
+    onSuccess: (newMember: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/members"] });
       queryClient.invalidateQueries({ queryKey: ["/api/analytics/stats"] });
       onOpenChange(false);
@@ -137,6 +82,13 @@ export default function AddMemberModal({ open, onOpenChange }: AddMemberModalPro
         title: "Success",
         description: "Techie created successfully",
       });
+      
+      // Navigate to the newly created member's profile page
+      if (newMember && newMember.id) {
+        setTimeout(() => {
+          setLocation(`/members/${newMember.id}`);
+        }, 100);
+      }
     },
     onError: () => {
       showToast({
@@ -159,11 +111,32 @@ export default function AddMemberModal({ open, onOpenChange }: AddMemberModalPro
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            {/* FullName - Email */}
+            {/* Profile Picture */}
+            <div className="flex justify-center mb-6">
+              <FormField
+                control={form.control}
+                name="profilePicture"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Profile Picture</FormLabel>
+                    <FormControl>
+                      <ProfilePictureUpload
+                        currentImage={field.value}
+                        onImageChange={field.onChange}
+                        size="lg"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            {/* Name - Email */}
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
-                name="fullName"
+                name="name"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Full Name</FormLabel>
@@ -190,7 +163,7 @@ export default function AddMemberModal({ open, onOpenChange }: AddMemberModalPro
               />
             </div>
 
-            {/* Location - HireDate */}
+            {/* Location - Category */}
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -198,109 +171,25 @@ export default function AddMemberModal({ open, onOpenChange }: AddMemberModalPro
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Location</FormLabel>
-                    <Popover open={locationComboOpen} onOpenChange={setLocationComboOpen}>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant="outline"
-                            role="combobox"
-                            className={cn(
-                              "w-full justify-between font-normal",
-                              !field.value && "text-muted-foreground"
-                            )}
-                          >
-                            {field.value || "Select location"}
-                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-full p-0">
-                        <Command>
-                          <CommandInput 
-                            placeholder="Search or add location..." 
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                const inputValue = e.currentTarget.value.trim();
-                                if (inputValue && !availableLocations.some(c => c.toLowerCase() === inputValue.toLowerCase())) {
-                                  addNewLocation(inputValue);
-                                  field.onChange(inputValue);
-                                  setLocationComboOpen(false);
-                                }
-                              }
-                            }}
-                          />
-                          <CommandEmpty className="py-2 px-3 text-sm">
-                            Press Enter to add new location
-                          </CommandEmpty>
-                          <CommandGroup className="max-h-48 overflow-auto">
-                            {availableLocations.map((location) => (
-                              <CommandItem
-                                value={location}
-                                key={location}
-                                onSelect={() => {
-                                  field.onChange(location);
-                                  setLocationComboOpen(false);
-                                }}
-                              >
-                                <Check
-                                  className={cn(
-                                    "mr-2 h-4 w-4",
-                                    location === field.value
-                                      ? "opacity-100"
-                                      : "opacity-0"
-                                  )}
-                                />
-                                {location}
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select location" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {locations.map((location) => (
+                          <SelectItem key={location.id} value={location.name}>
+                            {location.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name="hireDate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Hire Date</FormLabel>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant="outline"
-                            className={cn(
-                              "w-full pl-3 text-left font-normal",
-                              !field.value && "text-muted-foreground"
-                            )}
-                          >
-                            {field.value ? format(field.value, "PPP") : "Pick a date"}
-                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                          mode="single"
-                          selected={field.value}
-                          onSelect={field.onChange}
-                          disabled={(date: Date) => date > new Date() || date < new Date("1900-01-01")}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* Category - CurrentClient */}
-            <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="category"
@@ -325,94 +214,49 @@ export default function AddMemberModal({ open, onOpenChange }: AddMemberModalPro
                   </FormItem>
                 )}
               />
-
-              <FormField
-                control={form.control}
-                name="currentClient"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Current Client</FormLabel>
-                    <Popover open={clientComboOpen} onOpenChange={setClientComboOpen}>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant="outline"
-                            role="combobox"
-                            aria-expanded={clientComboOpen}
-                            className={cn(
-                              "w-full justify-between font-normal",
-                              !field.value && "text-muted-foreground"
-                            )}
-                          >
-                            {field.value || "Select client"}
-                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-full p-0">
-                        <Command>
-                          <CommandInput 
-                            placeholder="Search or add new client..." 
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.preventDefault();
-                                const value = e.currentTarget.value.trim();
-                                if (value) {
-                                  addNewClient(value);
-                                  field.onChange(value);
-                                  setClientComboOpen(false);
-                                }
-                              }
-                            }}
-                          />
-                          <CommandList>
-                            <CommandEmpty>
-                              <div className="p-2 text-sm text-muted-foreground">
-                                Press Enter to add new client
-                              </div>
-                            </CommandEmpty>
-                            <CommandGroup>
-                              {availableClients.map((client) => (
-                                <CommandItem
-                                  key={client}
-                                  value={client}
-                                  onSelect={() => {
-                                    field.onChange(client);
-                                    setClientComboOpen(false);
-                                  }}
-                                >
-                                  <Check
-                                    className={cn(
-                                      "mr-2 h-4 w-4",
-                                      field.value === client ? "opacity-100" : "opacity-0"
-                                    )}
-                                  />
-                                  {client}
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
             </div>
 
-            <div className="flex justify-end space-x-2 pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-              >
+            {/* Hire Date */}
+            <FormField
+              control={form.control}
+              name="hireDate"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Hire Date (Optional)</FormLabel>
+                  <FormControl>
+                    <DatePicker
+                      selected={field.value}
+                      onChange={(date: Date | null) => field.onChange(date)}
+                      dateFormat="dd/MM/yyyy"
+                      showYearDropdown
+                      showMonthDropdown
+                      dropdownMode="select"
+                      yearDropdownItemNumber={50}
+                      maxDate={new Date()}
+                      placeholderText="DD/MM/YYYY"
+                      customInput={
+                        <InputMask
+                          mask="99/99/9999"
+                          placeholder="DD/MM/YYYY"
+                          className={cn(
+                            "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+                            form.formState.errors.hireDate && "border-red-500"
+                          )}
+                        />
+                      }
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Submit Button */}
+            <div className="flex justify-end space-x-3 pt-4">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
-              <Button
-                type="submit"
-                disabled={createMemberMutation.isPending}
-              >
+              <Button type="submit" disabled={createMemberMutation.isPending}>
                 {createMemberMutation.isPending ? "Creating..." : "Create Techie"}
               </Button>
             </div>

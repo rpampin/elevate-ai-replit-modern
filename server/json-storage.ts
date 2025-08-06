@@ -1,22 +1,28 @@
 import { promises as fs } from 'fs';
 import { join } from 'path';
-import type {
-  KnowledgeArea, InsertKnowledgeArea,
+import { 
+  KnowledgeArea, InsertKnowledgeArea, 
   SkillCategory, InsertSkillCategory,
   Skill, InsertSkill, SkillWithDetails,
   Scale, InsertScale,
+  Client, InsertClient,
+  Category, InsertCategory,
+  Location, InsertLocation,
   Member, InsertMember, MemberWithSkills,
   MemberProfile, InsertMemberProfile,
   MemberSkill, InsertMemberSkill,
   LearningGoal, InsertLearningGoal
-} from "@shared/schema";
-import type { IStorage } from "./storage";
+} from '../shared/schema';
+import { IStorage } from './storage';
 
 interface StorageData {
   knowledgeAreas: KnowledgeArea[];
   skillCategories: SkillCategory[];
   skills: Skill[];
   scales: Scale[];
+  clients: Client[];
+  categories: Category[];
+  locations: Location[];
   members: Member[];
   memberProfiles: MemberProfile[];
   memberSkills: MemberSkill[];
@@ -26,6 +32,9 @@ interface StorageData {
     skillCategoryId: number;
     skillId: number;
     scaleId: number;
+    clientId: number;
+    categoryId: number;
+    locationId: number;
     memberId: number;
     memberProfileId: number;
     memberSkillId: number;
@@ -36,20 +45,26 @@ interface StorageData {
 export class JsonStorage implements IStorage {
   private dataPath = join(process.cwd(), 'data');
   private filePath = join(this.dataPath, 'skills-data.json');
-  
+
   private knowledgeAreasData: Map<number, KnowledgeArea> = new Map();
   private skillCategoriesData: Map<number, SkillCategory> = new Map();
   private skillsData: Map<number, Skill> = new Map();
   private scalesData: Map<number, Scale> = new Map();
+  private clientsData: Map<number, Client> = new Map();
+  private categoriesData: Map<number, Category> = new Map();
+  private locationsData: Map<number, Location> = new Map();
   private membersData: Map<number, Member> = new Map();
   private memberProfilesData: Map<number, MemberProfile> = new Map();
   private memberSkillsData: Map<number, MemberSkill> = new Map();
   private learningGoalsData: Map<number, LearningGoal> = new Map();
-  
+
   private currentKnowledgeAreaId = 1;
   private currentSkillCategoryId = 1;
   private currentSkillId = 1;
   private currentScaleId = 1;
+  private currentClientId = 1;
+  private currentCategoryId = 1;
+  private currentLocationId = 1;
   private currentMemberId = 1;
   private currentMemberProfileId = 1;
   private currentMemberSkillId = 1;
@@ -73,34 +88,108 @@ export class JsonStorage implements IStorage {
   private async loadData() {
     try {
       const data = await fs.readFile(this.filePath, 'utf-8');
+      
+      if (!data || data.trim() === '') {
+        throw new Error('Empty data file');
+      }
+
       const parsedData: StorageData = JSON.parse(data);
-      
-      // Load data into maps
-      parsedData.knowledgeAreas.forEach(item => this.knowledgeAreasData.set(item.id, item));
-      parsedData.skillCategories.forEach(item => this.skillCategoriesData.set(item.id, item));
-      parsedData.skills.forEach(item => this.skillsData.set(item.id, item));
-      parsedData.scales.forEach(item => this.scalesData.set(item.id, item));
-      parsedData.members.forEach(item => {
-        if (item.hireDate) item.hireDate = new Date(item.hireDate);
-        this.membersData.set(item.id, item);
+
+      // Load knowledge areas
+      this.knowledgeAreasData.clear();
+      parsedData.knowledgeAreas.forEach(area => {
+        this.knowledgeAreasData.set(area.id, area);
       });
-      parsedData.memberProfiles.forEach(item => this.memberProfilesData.set(item.id, item));
-      parsedData.memberSkills.forEach(item => this.memberSkillsData.set(item.id, item));
-      parsedData.learningGoals.forEach(item => {
-        if (item.createdAt) item.createdAt = new Date(item.createdAt);
-        this.learningGoalsData.set(item.id, item);
+
+      // Load skill categories
+      this.skillCategoriesData.clear();
+      parsedData.skillCategories.forEach(category => {
+        this.skillCategoriesData.set(category.id, category);
       });
-      
-      // Load counters
+
+      // Load skills
+      this.skillsData.clear();
+      parsedData.skills.forEach(skill => {
+        this.skillsData.set(skill.id, skill);
+      });
+
+      // Load scales
+      this.scalesData.clear();
+      parsedData.scales.forEach(scale => {
+        this.scalesData.set(scale.id, scale);
+      });
+
+      // Load clients
+      this.clientsData.clear();
+      if (parsedData.clients) {
+        parsedData.clients.forEach(client => {
+          this.clientsData.set(client.id, client);
+        });
+      }
+
+      // Load categories
+      this.categoriesData.clear();
+      if (parsedData.categories && parsedData.categories.length > 0) {
+        parsedData.categories.forEach(category => {
+          this.categoriesData.set(category.id, category);
+        });
+      } else {
+        // Initialize default categories if none exist
+        this.initializeDefaultCategories();
+        // Save the initialized data immediately
+        await this.saveData();
+      }
+
+      // Load locations
+      this.locationsData.clear();
+      if (parsedData.locations && parsedData.locations.length > 0) {
+        parsedData.locations.forEach(location => {
+          this.locationsData.set(location.id, location);
+        });
+      } else {
+        // Initialize default locations if none exist
+        this.initializeDefaultLocations();
+        // Save the initialized data immediately
+        await this.saveData();
+      }
+
+      // Load members
+      this.membersData.clear();
+      parsedData.members.forEach(member => {
+        this.membersData.set(member.id, member);
+      });
+
+      // Load member profiles
+      this.memberProfilesData.clear();
+      parsedData.memberProfiles.forEach(profile => {
+        this.memberProfilesData.set(profile.id, profile);
+      });
+
+      // Load member skills
+      this.memberSkillsData.clear();
+      parsedData.memberSkills.forEach(memberSkill => {
+        this.memberSkillsData.set(memberSkill.id, memberSkill);
+      });
+
+      // Load learning goals
+      this.learningGoalsData.clear();
+      parsedData.learningGoals.forEach(goal => {
+        this.learningGoalsData.set(goal.id, goal);
+      });
+
+      // Update counters
       this.currentKnowledgeAreaId = parsedData.counters.knowledgeAreaId;
       this.currentSkillCategoryId = parsedData.counters.skillCategoryId;
       this.currentSkillId = parsedData.counters.skillId;
       this.currentScaleId = parsedData.counters.scaleId;
+      this.currentClientId = parsedData.counters.clientId || 1;
+      this.currentCategoryId = parsedData.counters.categoryId || 1;
+      this.currentLocationId = parsedData.counters.locationId || 1;
       this.currentMemberId = parsedData.counters.memberId;
       this.currentMemberProfileId = parsedData.counters.memberProfileId;
       this.currentMemberSkillId = parsedData.counters.memberSkillId;
       this.currentLearningGoalId = parsedData.counters.learningGoalId;
-      
+
       console.log('Data loaded from JSON file');
     } catch (error) {
       throw new Error('Failed to load data from JSON file');
@@ -114,6 +203,9 @@ export class JsonStorage implements IStorage {
         skillCategories: Array.from(this.skillCategoriesData.values()),
         skills: Array.from(this.skillsData.values()),
         scales: Array.from(this.scalesData.values()),
+        clients: Array.from(this.clientsData.values()),
+        categories: Array.from(this.categoriesData.values()),
+        locations: Array.from(this.locationsData.values()),
         members: Array.from(this.membersData.values()),
         memberProfiles: Array.from(this.memberProfilesData.values()),
         memberSkills: Array.from(this.memberSkillsData.values()),
@@ -123,13 +215,16 @@ export class JsonStorage implements IStorage {
           skillCategoryId: this.currentSkillCategoryId,
           skillId: this.currentSkillId,
           scaleId: this.currentScaleId,
+          clientId: this.currentClientId,
+          categoryId: this.currentCategoryId,
+          locationId: this.currentLocationId,
           memberId: this.currentMemberId,
           memberProfileId: this.currentMemberProfileId,
           memberSkillId: this.currentMemberSkillId,
           learningGoalId: this.currentLearningGoalId,
         }
       };
-      
+
       await fs.writeFile(this.filePath, JSON.stringify(data, null, 2), 'utf-8');
     } catch (error) {
       console.error('Failed to save data to JSON file:', error);
@@ -137,335 +232,265 @@ export class JsonStorage implements IStorage {
   }
 
   private initializeDefaultData() {
-    // Initialize Knowledge Areas first
-    const knowledgeAreas = [
-      { id: 1, name: "Programming & Development", description: "Software development, coding languages, and programming paradigms" },
-      { id: 2, name: "Data Engineering & Analytics", description: "Data processing, analytics, and business intelligence" },
-      { id: 3, name: "Cloud Computing & Infrastructure", description: "Cloud platforms, infrastructure as code, and distributed systems" },
-      { id: 4, name: "DevOps & Site Reliability", description: "Continuous integration, deployment, monitoring, and system reliability" },
-      { id: 5, name: "Cybersecurity", description: "Information security, threat analysis, and security implementation" },
-      { id: 6, name: "Mobile Development", description: "Mobile application development for iOS, Android, and cross-platform" },
-      { id: 7, name: "Web Development", description: "Frontend, backend, and full-stack web application development" },
-      { id: 8, name: "Database Management", description: "Database design, administration, and optimization" },
-      { id: 9, name: "Artificial Intelligence & ML", description: "Machine learning, deep learning, and AI implementation" },
-      { id: 10, name: "Project Management", description: "Project planning, execution, and team coordination" },
-      { id: 11, name: "Business Analysis", description: "Requirements gathering, process improvement, and business strategy" },
-      { id: 12, name: "User Experience Design", description: "UX/UI design, user research, and design thinking" }
+    // Initialize knowledge areas
+    const knowledgeAreas: KnowledgeArea[] = [
+      { id: 1, name: "Programming & Development", description: "Software development and programming languages" },
+      { id: 2, name: "DevOps & Infrastructure", description: "Development operations and infrastructure management" },
+      { id: 3, name: "Cloud Services", description: "Cloud computing platforms and services" },
+      { id: 4, name: "Data & Analytics", description: "Data management and analytics tools" },
+      { id: 5, name: "Testing & Quality", description: "Software testing and quality assurance" }
     ];
-    knowledgeAreas.forEach(area => this.knowledgeAreasData.set(area.id, area));
-    this.currentKnowledgeAreaId = 13;
 
-    // Initialize Skill Categories with Scale relationships
-    const categories = [
-      { id: 1, name: "Language", criteria: "Programming languages and scripting languages", scaleId: 1 },
-      { id: 2, name: "Framework", criteria: "Development frameworks and libraries", scaleId: 2 },
-      { id: 3, name: "Tool", criteria: "Development tools, IDEs, and productivity software", scaleId: 3 },
-      { id: 4, name: "Database", criteria: "Database systems and data storage technologies", scaleId: 4 },
-      { id: 5, name: "Cloud Platform", criteria: "Cloud service providers and platforms", scaleId: 5 },
-      { id: 6, name: "Methodology", criteria: "Development methodologies and processes", scaleId: 6 },
-      { id: 7, name: "Architecture", criteria: "System architecture and design patterns", scaleId: 7 },
-      { id: 8, name: "Testing", criteria: "Testing frameworks, tools, and methodologies", scaleId: 8 },
-      { id: 9, name: "Security", criteria: "Security tools, practices, and frameworks", scaleId: 9 },
-      { id: 10, name: "DevOps", criteria: "DevOps tools and practices", scaleId: 10 },
-      { id: 11, name: "Communication", criteria: "Communication and collaboration skills", scaleId: 11 },
-      { id: 12, name: "Leadership", criteria: "Leadership and management skills", scaleId: 12 }
+    knowledgeAreas.forEach(area => {
+      this.knowledgeAreasData.set(area.id, area);
+    });
+
+    // Initialize skill categories
+    const skillCategories: SkillCategory[] = [
+      { id: 1, name: "Programming Language", description: "Programming languages and frameworks" },
+      { id: 2, name: "Database Technology", description: "Database systems and technologies" },
+      { id: 3, name: "DevOps Tool", description: "DevOps and automation tools" },
+      { id: 4, name: "Testing Framework", description: "Testing tools and frameworks" },
+      { id: 5, name: "Cloud Platform", description: "Cloud computing platforms" },
+      { id: 6, name: "Development Tool", description: "Development and productivity tools" },
+      { id: 7, name: "Web Technology", description: "Web development technologies" },
+      { id: 8, name: "Mobile Technology", description: "Mobile development technologies" }
     ];
-    categories.forEach(category => this.skillCategoriesData.set(category.id, category));
-    this.currentSkillCategoryId = 13;
 
-    // Initialize Scales linked to Categories with ordered values
-    const scales = [
-      // For Programming Languages (Category 1)
-      { id: 1, name: "Programming Experience", type: "qualitative" as const, values: [
-        {value: "Beginner", order: 1}, {value: "Intermediate", order: 2}, {value: "Advanced", order: 3}, {value: "Expert", order: 4}
-      ], categoryId: 1 },
-      // For Frameworks (Category 2)  
-      { id: 2, name: "Framework Proficiency", type: "qualitative" as const, values: [
-        {value: "Basic", order: 1}, {value: "Proficient", order: 2}, {value: "Advanced", order: 3}, {value: "Expert", order: 4}
-      ], categoryId: 2 },
-      // For Tools (Category 3)
-      { id: 3, name: "Tool Usage", type: "qualitative" as const, values: [
-        {value: "Novice", order: 1}, {value: "User", order: 2}, {value: "Power User", order: 3}, {value: "Expert", order: 4}
-      ], categoryId: 3 },
-      // For Databases (Category 4)
-      { id: 4, name: "Database Skills", type: "qualitative" as const, values: [
-        {value: "Basic", order: 1}, {value: "Intermediate", order: 2}, {value: "Advanced", order: 3}, {value: "DBA Level", order: 4}
-      ], categoryId: 4 },
-      // For Cloud Platforms (Category 5)
-      { id: 5, name: "Cloud Experience", type: "qualitative" as const, values: [
-        {value: "Beginner", order: 1}, {value: "Practitioner", order: 2}, {value: "Professional", order: 3}, {value: "Expert", order: 4}
-      ], categoryId: 5 },
-      // For Methodologies (Category 6)
-      { id: 6, name: "Methodology Knowledge", type: "qualitative" as const, values: [
-        {value: "Aware", order: 1}, {value: "Practicing", order: 2}, {value: "Experienced", order: 3}, {value: "Champion", order: 4}
-      ], categoryId: 6 },
-      // For Architecture (Category 7)
-      { id: 7, name: "Architecture Skills", type: "qualitative" as const, values: [
-        {value: "Junior", order: 1}, {value: "Mid-level", order: 2}, {value: "Senior", order: 3}, {value: "Principal", order: 4}
-      ], categoryId: 7 },
-      // For Testing (Category 8)
-      { id: 8, name: "Testing Expertise", type: "qualitative" as const, values: [
-        {value: "Basic", order: 1}, {value: "Intermediate", order: 2}, {value: "Advanced", order: 3}, {value: "Test Lead", order: 4}
-      ], categoryId: 8 },
-      // For Security (Category 9)
-      { id: 9, name: "Security Knowledge", type: "qualitative" as const, values: [
-        {value: "Aware", order: 1}, {value: "Informed", order: 2}, {value: "Practitioner", order: 3}, {value: "Expert", order: 4}
-      ], categoryId: 9 },
-      // For DevOps (Category 10)
-      { id: 10, name: "DevOps Experience", type: "qualitative" as const, values: [
-        {value: "Beginner", order: 1}, {value: "Intermediate", order: 2}, {value: "Advanced", order: 3}, {value: "Expert", order: 4}
-      ], categoryId: 10 },
-      // For Communication (Category 11)
-      { id: 11, name: "Communication Level", type: "qualitative" as const, values: [
-        {value: "Developing", order: 1}, {value: "Competent", order: 2}, {value: "Proficient", order: 3}, {value: "Expert", order: 4}
-      ], categoryId: 11 },
-      // For Leadership (Category 12)
-      { id: 12, name: "Leadership Level", type: "qualitative" as const, values: [
-        {value: "Individual", order: 1}, {value: "Team Lead", order: 2}, {value: "Manager", order: 3}, {value: "Executive", order: 4}
-      ], categoryId: 12 }
-    ];
-    scales.forEach(scale => this.scalesData.set(scale.id, scale));
-    this.currentScaleId = 13;
+    skillCategories.forEach(category => {
+      this.skillCategoriesData.set(category.id, category);
+    });
 
-    // Initialize Skills
-    const skills = [
-      // Programming Languages
-      { id: 1, name: "JavaScript", purpose: "Web development and full-stack applications", categoryId: 1, knowledgeAreaId: 7 },
-      { id: 2, name: "Python", purpose: "Backend development, data science, and automation", categoryId: 1, knowledgeAreaId: 1 },
-      { id: 3, name: "Java", purpose: "Enterprise applications and backend systems", categoryId: 1, knowledgeAreaId: 1 },
-      { id: 4, name: "TypeScript", purpose: "Type-safe JavaScript development", categoryId: 1, knowledgeAreaId: 7 },
-      { id: 5, name: "C#", purpose: ".NET development and enterprise applications", categoryId: 1, knowledgeAreaId: 1 },
-      { id: 6, name: "Go", purpose: "High-performance backend services", categoryId: 1, knowledgeAreaId: 1 },
-      { id: 7, name: "Rust", purpose: "System programming and performance-critical applications", categoryId: 1, knowledgeAreaId: 1 },
-      { id: 8, name: "Swift", purpose: "iOS and macOS application development", categoryId: 1, knowledgeAreaId: 6 },
-      { id: 9, name: "Kotlin", purpose: "Android development and JVM applications", categoryId: 1, knowledgeAreaId: 6 },
-
-      // Frameworks
-      { id: 10, name: "React", purpose: "Frontend user interface development", categoryId: 2, knowledgeAreaId: 7 },
-      { id: 11, name: "Angular", purpose: "Enterprise frontend applications", categoryId: 2, knowledgeAreaId: 7 },
-      { id: 12, name: "Vue.js", purpose: "Progressive frontend development", categoryId: 2, knowledgeAreaId: 7 },
-      { id: 13, name: "Node.js", purpose: "Server-side JavaScript applications", categoryId: 2, knowledgeAreaId: 7 },
-      { id: 14, name: "Django", purpose: "Python web application development", categoryId: 2, knowledgeAreaId: 1 },
-      { id: 15, name: "Spring Boot", purpose: "Java enterprise application development", categoryId: 2, knowledgeAreaId: 1 },
-      { id: 16, name: "React Native", purpose: "Cross-platform mobile development", categoryId: 2, knowledgeAreaId: 6 },
-      { id: 17, name: "Flutter", purpose: "Cross-platform mobile and web development", categoryId: 2, knowledgeAreaId: 6 },
-
-      // Cloud Platforms
-      { id: 18, name: "AWS", purpose: "Amazon Web Services cloud platform", categoryId: 5, knowledgeAreaId: 3 },
-      { id: 19, name: "Azure", purpose: "Microsoft Azure cloud platform", categoryId: 5, knowledgeAreaId: 3 },
+    // Initialize skills
+    const skills: Skill[] = [
+      { id: 1, name: ".Net - C#", purpose: ".Net - C# programming", categoryId: 1, knowledgeAreaId: 1 },
+      { id: 2, name: "Java", purpose: "Java programming language", categoryId: 1, knowledgeAreaId: 1 },
+      { id: 3, name: "JavaScript", purpose: "JavaScript programming language", categoryId: 1, knowledgeAreaId: 1 },
+      { id: 4, name: "Python", purpose: "Python programming language", categoryId: 1, knowledgeAreaId: 1 },
+      { id: 5, name: "React", purpose: "React JavaScript library", categoryId: 7, knowledgeAreaId: 1 },
+      { id: 6, name: "Angular", purpose: "Angular web framework", categoryId: 7, knowledgeAreaId: 1 },
+      { id: 7, name: "Vue.js", purpose: "Vue.js web framework", categoryId: 7, knowledgeAreaId: 1 },
+      { id: 8, name: "Node.js", purpose: "Node.js runtime environment", categoryId: 1, knowledgeAreaId: 1 },
+      { id: 9, name: "Spring Boot", purpose: "Spring Boot Java framework", categoryId: 1, knowledgeAreaId: 1 },
+      { id: 10, name: "Docker", purpose: "Docker containerization", categoryId: 3, knowledgeAreaId: 2 },
+      { id: 11, name: "Kubernetes", purpose: "Kubernetes orchestration", categoryId: 3, knowledgeAreaId: 2 },
+      { id: 12, name: "Jenkins", purpose: "Jenkins CI/CD", categoryId: 3, knowledgeAreaId: 2 },
+      { id: 13, name: "Git", purpose: "Git version control", categoryId: 6, knowledgeAreaId: 1 },
+      { id: 14, name: "PostgreSQL", purpose: "PostgreSQL database", categoryId: 2, knowledgeAreaId: 4 },
+      { id: 15, name: "MySQL", purpose: "MySQL database", categoryId: 2, knowledgeAreaId: 4 },
+      { id: 16, name: "MongoDB", purpose: "MongoDB NoSQL database", categoryId: 2, knowledgeAreaId: 4 },
+      { id: 17, name: "Redis", purpose: "Redis in-memory database", categoryId: 2, knowledgeAreaId: 4 },
+      { id: 18, name: "AWS", purpose: "Amazon Web Services", categoryId: 5, knowledgeAreaId: 3 },
+      { id: 19, name: "Azure", purpose: "Microsoft Azure", categoryId: 5, knowledgeAreaId: 3 },
       { id: 20, name: "Google Cloud Platform", purpose: "Google's cloud computing services", categoryId: 5, knowledgeAreaId: 3 },
-
-      // Databases
-      { id: 21, name: "PostgreSQL", purpose: "Advanced relational database management", categoryId: 4, knowledgeAreaId: 8 },
-      { id: 22, name: "MongoDB", purpose: "NoSQL document database", categoryId: 4, knowledgeAreaId: 8 },
-      { id: 23, name: "Redis", purpose: "In-memory data structure store", categoryId: 4, knowledgeAreaId: 8 },
-      { id: 24, name: "MySQL", purpose: "Popular relational database system", categoryId: 4, knowledgeAreaId: 8 },
-
-      // DevOps Tools
-      { id: 25, name: "Docker", purpose: "Containerization and deployment", categoryId: 10, knowledgeAreaId: 4 },
-      { id: 26, name: "Kubernetes", purpose: "Container orchestration", categoryId: 10, knowledgeAreaId: 4 },
-      { id: 27, name: "Jenkins", purpose: "Continuous integration and deployment", categoryId: 10, knowledgeAreaId: 4 },
-      { id: 28, name: "GitLab CI/CD", purpose: "Integrated DevOps platform", categoryId: 10, knowledgeAreaId: 4 },
-
-      // Development Tools
-      { id: 29, name: "Git", purpose: "Version control and collaboration", categoryId: 3, knowledgeAreaId: 1 },
-      { id: 30, name: "VS Code", purpose: "Code editor and development environment", categoryId: 3, knowledgeAreaId: 1 },
-      { id: 31, name: "IntelliJ IDEA", purpose: "Java and multi-language IDE", categoryId: 3, knowledgeAreaId: 1 },
-      { id: 32, name: "Figma", purpose: "UI/UX design and prototyping", categoryId: 3, knowledgeAreaId: 12 },
-
-      // Testing
-      { id: 33, name: "Jest", purpose: "JavaScript testing framework", categoryId: 8, knowledgeAreaId: 7 },
-      { id: 34, name: "Cypress", purpose: "End-to-end testing", categoryId: 8, knowledgeAreaId: 7 },
-      { id: 35, name: "JUnit", purpose: "Java unit testing framework", categoryId: 8, knowledgeAreaId: 1 },
-
-      // Methodologies
-      { id: 36, name: "Agile", purpose: "Iterative software development methodology", categoryId: 6, knowledgeAreaId: 10 },
-      { id: 37, name: "Scrum", purpose: "Agile project management framework", categoryId: 6, knowledgeAreaId: 10 },
-      { id: 38, name: "DevOps", purpose: "Development and operations integration", categoryId: 6, knowledgeAreaId: 4 },
-
-      // Architecture
-      { id: 39, name: "Microservices", purpose: "Distributed system architecture", categoryId: 7, knowledgeAreaId: 1 },
-      { id: 40, name: "RESTful APIs", purpose: "Web service architecture", categoryId: 7, knowledgeAreaId: 7 },
-      { id: 41, name: "GraphQL", purpose: "Query language for APIs", categoryId: 7, knowledgeAreaId: 7 },
-
-      // AI/ML
-      { id: 42, name: "TensorFlow", purpose: "Machine learning framework", categoryId: 2, knowledgeAreaId: 9 },
-      { id: 43, name: "PyTorch", purpose: "Deep learning framework", categoryId: 2, knowledgeAreaId: 9 },
-      { id: 44, name: "Scikit-learn", purpose: "Machine learning library for Python", categoryId: 2, knowledgeAreaId: 9 },
-
-      // Soft Skills
-      { id: 45, name: "Technical Communication", purpose: "Explaining technical concepts clearly", categoryId: 11, knowledgeAreaId: 10 },
-      { id: 46, name: "Team Leadership", purpose: "Leading and motivating development teams", categoryId: 12, knowledgeAreaId: 10 },
-      { id: 47, name: "Mentoring", purpose: "Guiding junior developers", categoryId: 12, knowledgeAreaId: 10 },
-      { id: 48, name: "Client Presentation", purpose: "Presenting solutions to stakeholders", categoryId: 11, knowledgeAreaId: 11 },
-
-      // Security
-      { id: 49, name: "OAuth 2.0", purpose: "Authentication and authorization", categoryId: 9, knowledgeAreaId: 5 },
-      { id: 50, name: "OWASP", purpose: "Web application security practices", categoryId: 9, knowledgeAreaId: 5 }
+      { id: 21, name: "Terraform", purpose: "Infrastructure as Code", categoryId: 3, knowledgeAreaId: 2 },
+      { id: 22, name: "Ansible", purpose: "Configuration management", categoryId: 3, knowledgeAreaId: 2 },
+      { id: 23, name: "Jest", purpose: "JavaScript testing framework", categoryId: 4, knowledgeAreaId: 5 },
+      { id: 24, name: "JUnit", purpose: "Java testing framework", categoryId: 4, knowledgeAreaId: 5 },
+      { id: 25, name: "Selenium", purpose: "Web automation testing", categoryId: 4, knowledgeAreaId: 5 },
+      { id: 26, name: "Cypress", purpose: "End-to-end testing", categoryId: 4, knowledgeAreaId: 5 },
+      { id: 27, name: "Postman", purpose: "API testing tool", categoryId: 4, knowledgeAreaId: 5 },
+      { id: 28, name: "GraphQL", purpose: "Query language for APIs", categoryId: 7, knowledgeAreaId: 1 },
+      { id: 29, name: "REST API", purpose: "RESTful web services", categoryId: 7, knowledgeAreaId: 1 },
+      { id: 30, name: "Microservices", purpose: "Microservices architecture", categoryId: 1, knowledgeAreaId: 1 },
     ];
-    skills.forEach(skill => this.skillsData.set(skill.id, skill));
-    this.currentSkillId = 51;
 
-    // Add sample members with diverse backgrounds
-    const members = [
+    skills.forEach(skill => {
+      this.skillsData.set(skill.id, skill);
+    });
+
+    // Initialize scales
+    const scales: Scale[] = [
       {
         id: 1,
-        fullName: "Ana García López",
-        email: "ana.garcia@techietalent.com",
-        category: "Builder",
-        hireDate: new Date("2023-01-15"),
-        currentClient: "Lunavi",
-        location: "Spain"
+        name: "Programming Experience",
+        type: "qualitative",
+        values: ["Beginner", "Intermediate", "Advanced", "Expert"],
+        description: "Programming skill levels"
       },
       {
         id: 2,
-        fullName: "Carlos Rodríguez Martín",
-        email: "carlos.rodriguez@techietalent.com",
-        category: "Solver",
-        hireDate: new Date("2022-06-10"),
-        currentClient: "TechCorp",
-        location: "Spain"
+        name: "Tools Proficiency",
+        type: "qualitative", 
+        values: ["Basic", "Proficient", "Advanced", "Expert"],
+        description: "Tool usage proficiency levels"
       },
       {
         id: 3,
-        fullName: "María Fernández Silva",
-        email: "maria.fernandez@techietalent.com",
-        category: "Wizard",
-        hireDate: new Date("2021-03-20"),
-        currentClient: "InnovateLab",
-        location: "Spain"
-      },
-      {
-        id: 4,
-        fullName: "David Moreno Cruz",
-        email: "david.moreno@techietalent.com",
-        category: "Starter",
-        hireDate: new Date("2024-01-08"),
-        currentClient: "Talent Pool",
-        location: "Spain"
+        name: "Years of Experience",
+        type: "quantitative",
+        values: ["1", "2", "3", "4", "5+"],
+        description: "Years of hands-on experience"
       }
     ];
-    members.forEach(member => this.membersData.set(member.id, member));
-    this.currentMemberId = 5;
 
-    // Add member profiles
-    const profiles = [
-      {
-        id: 1,
-        memberId: 1,
-        assignments: ["Frontend Development", "UI/UX Consulting", "React Migration"],
-        roles: ["Senior Frontend Developer", "Technical Lead"],
-        appreciations: ["Outstanding Q1 Performance", "Client Satisfaction Award", "Innovation Champion"],
-        feedbackComments: ["Excellent technical skills in React", "Great mentor for junior developers", "Strong problem-solving abilities"],
-        talentPoolPeriods: ["2023-Q1"]
-      },
-      {
-        id: 2,
-        memberId: 2,
-        assignments: ["Backend API Development", "Database Optimization", "Cloud Migration"],
-        roles: ["Senior Backend Developer", "DevOps Specialist"],
-        appreciations: ["Performance Optimization Expert", "Team Player Award"],
-        feedbackComments: ["Deep knowledge of cloud architecture", "Reliable and efficient", "Excellent debugging skills"],
-        talentPoolPeriods: []
-      },
-      {
-        id: 3,
-        memberId: 3,
-        assignments: ["Technical Architecture", "Team Leadership", "Strategic Planning"],
-        roles: ["Tech Lead", "Solution Architect", "Delivery Manager"],
-        appreciations: ["Leadership Excellence", "Strategic Vision Award", "Client Trust Builder"],
-        feedbackComments: ["Outstanding leadership capabilities", "Excellent client relationship management", "Strategic thinking"],
-        talentPoolPeriods: []
-      },
-      {
-        id: 4,
-        memberId: 4,
-        assignments: ["Junior Development", "Learning Program", "Code Reviews"],
-        roles: ["Junior Developer", "Trainee"],
-        appreciations: ["Fast Learner Award", "Best Newcomer"],
-        feedbackComments: ["Eager to learn", "Great potential", "Collaborative attitude"],
-        talentPoolPeriods: ["2024-Q1"]
-      }
+    scales.forEach(scale => {
+      this.scalesData.set(scale.id, scale);
+    });
+
+    // Initialize clients with isActive field
+    const clients: Client[] = [
+      { id: 1, name: "Talent Pool", description: "Internal talent pool for available team members", isActive: true },
+      { id: 2, name: "TechCorp Solutions", description: "Enterprise software development and consulting", isActive: true },
+      { id: 3, name: "FinanceFlow", description: "Financial technology and banking solutions", isActive: true },
+      { id: 4, name: "HealthTech Solutions", description: "Healthcare technology and medical software", isActive: true },
+      { id: 5, name: "RetailMax", description: "E-commerce and retail technology solutions", isActive: true },
+      { id: 6, name: "EduTech Pro", description: "Educational technology and learning platforms", isActive: true },
+      { id: 7, name: "DataVault Systems", description: "Big data analytics and data management", isActive: true },
+      { id: 8, name: "CloudFirst Technologies", description: "Cloud infrastructure and migration services", isActive: true },
+      { id: 9, name: "MobileApp Innovations", description: "Mobile application development and UX design", isActive: true },
+      { id: 10, name: "SecureNet Solutions", description: "Cybersecurity and network protection services", isActive: true },
+      { id: 11, name: "AgriTech Partners", description: "Agricultural technology and IoT solutions", isActive: true },
+      { id: 12, name: "InnovateLab", description: "Research and development for emerging technologies", isActive: true }
     ];
-    profiles.forEach(profile => this.memberProfilesData.set(profile.id, profile));
-    this.currentMemberProfileId = 5;
 
-    // Add member skills with realistic distributions
-    const memberSkills = [
-      // Ana García (React Frontend Expert)
-      { id: 1, memberId: 1, skillId: 1, level: "Expert", scaleId: 1 }, // JavaScript
-      { id: 2, memberId: 1, skillId: 4, level: "Advanced", scaleId: 1 }, // TypeScript
-      { id: 3, memberId: 1, skillId: 10, level: "Expert", scaleId: 1 }, // React
-      { id: 4, memberId: 1, skillId: 32, level: "Advanced", scaleId: 1 }, // Figma
-      { id: 5, memberId: 1, skillId: 45, level: "Advanced", scaleId: 1 }, // Technical Communication
+    clients.forEach(client => {
+      this.clientsData.set(client.id, client);
+    });
 
-      // Carlos Rodríguez (Backend & DevOps)
-      { id: 6, memberId: 2, skillId: 2, level: "Expert", scaleId: 1 }, // Python
-      { id: 7, memberId: 2, skillId: 3, level: "Advanced", scaleId: 1 }, // Java
-      { id: 8, memberId: 2, skillId: 18, level: "Advanced", scaleId: 1 }, // AWS
-      { id: 9, memberId: 2, skillId: 25, level: "Expert", scaleId: 1 }, // Docker
-      { id: 10, memberId: 2, skillId: 21, level: "Advanced", scaleId: 1 }, // PostgreSQL
-
-      // María Fernández (Full-stack Architect)
-      { id: 11, memberId: 3, skillId: 39, level: "Expert", scaleId: 1 }, // Microservices
-      { id: 12, memberId: 3, skillId: 46, level: "Expert", scaleId: 1 }, // Team Leadership
-      { id: 13, memberId: 3, skillId: 36, level: "Expert", scaleId: 1 }, // Agile
-      { id: 14, memberId: 3, skillId: 1, level: "Expert", scaleId: 1 }, // JavaScript
-      { id: 15, memberId: 3, skillId: 2, level: "Advanced", scaleId: 1 }, // Python
-
-      // David Moreno (Junior Developer)
-      { id: 16, memberId: 4, skillId: 1, level: "Intermediate", scaleId: 1 }, // JavaScript
-      { id: 17, memberId: 4, skillId: 10, level: "Beginner", scaleId: 1 }, // React
-      { id: 18, memberId: 4, skillId: 29, level: "Intermediate", scaleId: 1 }, // Git
-      { id: 19, memberId: 4, skillId: 30, level: "Intermediate", scaleId: 1 } // VS Code
+    // Initialize categories
+    const categories: Category[] = [
+      { id: 1, name: "Starter", description: "Entry-level technical professionals beginning their journey", isActive: true },
+      { id: 2, name: "Builder", description: "Mid-level professionals building solutions and systems", isActive: true },
+      { id: 3, name: "Solver", description: "Senior professionals solving complex technical challenges", isActive: true },
+      { id: 4, name: "Wizard", description: "Expert-level professionals with deep specialized knowledge", isActive: true }
     ];
-    memberSkills.forEach(skill => this.memberSkillsData.set(skill.id, skill));
-    this.currentMemberSkillId = 20;
 
-    // Add learning goals
-    const learningGoals = [
-      {
-        id: 1,
-        memberId: 1,
-        skillId: 42, // TensorFlow
-        targetLevel: "Intermediate",
-        description: "Learn machine learning fundamentals to enhance UX with AI-driven features",
-        status: "in_progress",
-        createdAt: new Date("2024-01-15")
-      },
-      {
-        id: 2,
-        memberId: 2,
-        skillId: 26, // Kubernetes
-        targetLevel: "Expert",
-        description: "Master container orchestration for enterprise-scale deployments",
-        status: "in_progress",
-        createdAt: new Date("2024-01-20")
-      },
-      {
-        id: 3,
-        memberId: 4,
-        skillId: 10, // React
-        targetLevel: "Advanced",
-        description: "Become proficient in React for frontend development projects",
-        status: "in_progress",
-        createdAt: new Date("2024-02-01")
-      },
-      {
-        id: 4,
-        memberId: 4,
-        skillId: 4, // TypeScript
-        targetLevel: "Intermediate",
-        description: "Learn TypeScript to write more maintainable JavaScript code",
-        status: "planned",
-        createdAt: new Date("2024-02-15")
-      }
+    categories.forEach(category => {
+      this.categoriesData.set(category.id, category);
+    });
+
+    // Initialize locations
+    const locations: Location[] = [
+      { id: 1, name: "Argentina", description: "Argentina office location", isActive: true },
+      { id: 2, name: "Uruguay", description: "Uruguay office location", isActive: true },
+      { id: 3, name: "Chile", description: "Chile office location", isActive: true },
+      { id: 4, name: "Brazil", description: "Brazil office location", isActive: true },
+      { id: 5, name: "Colombia", description: "Colombia office location", isActive: true }
     ];
-    learningGoals.forEach(goal => this.learningGoalsData.set(goal.id, goal));
-    this.currentLearningGoalId = 5;
+
+    locations.forEach(location => {
+      this.locationsData.set(location.id, location);
+    });
+
+    // Update counters
+    this.currentKnowledgeAreaId = 6;
+    this.currentSkillCategoryId = 9;
+    this.currentSkillId = 31;
+    this.currentScaleId = 4;
+    this.currentClientId = 13;
+    this.currentCategoryId = 5;
+    this.currentLocationId = 6;
+    this.currentMemberId = 1;
+    this.currentMemberProfileId = 1;
+    this.currentMemberSkillId = 1;
+    this.currentLearningGoalId = 1;
   }
 
-  // Knowledge Areas
+  private initializeDefaultCategories() {
+    const categories: Category[] = [
+      { id: 1, name: "Starter", description: "Entry-level technical professionals beginning their journey", isActive: true },
+      { id: 2, name: "Builder", description: "Mid-level professionals building solutions and systems", isActive: true },
+      { id: 3, name: "Solver", description: "Senior professionals solving complex technical challenges", isActive: true },
+      { id: 4, name: "Wizard", description: "Expert-level professionals with deep specialized knowledge", isActive: true }
+    ];
+
+    categories.forEach(category => {
+      this.categoriesData.set(category.id, category);
+    });
+    this.currentCategoryId = 5;
+  }
+
+  private initializeDefaultLocations() {
+    const locations: Location[] = [
+      { id: 1, name: "Argentina", description: "Argentina office location", isActive: true },
+      { id: 2, name: "Uruguay", description: "Uruguay office location", isActive: true },
+      { id: 3, name: "Chile", description: "Chile office location", isActive: true },
+      { id: 4, name: "Brazil", description: "Brazil office location", isActive: true },
+      { id: 5, name: "Colombia", description: "Colombia office location", isActive: true }
+    ];
+
+    locations.forEach(location => {
+      this.locationsData.set(location.id, location);
+    });
+    this.currentLocationId = 6;
+  }
+
+  // Categories methods
+  async getCategories(): Promise<Category[]> {
+    return Array.from(this.categoriesData.values());
+  }
+
+  async getCategory(id: number): Promise<Category | undefined> {
+    return this.categoriesData.get(id);
+  }
+
+  async createCategory(data: InsertCategory): Promise<Category> {
+    const id = this.currentCategoryId++;
+    const category: Category = { 
+      id, 
+      name: data.name, 
+      description: data.description ?? null,
+      isActive: data.isActive ?? null
+    };
+    this.categoriesData.set(id, category);
+    await this.saveData();
+    return category;
+  }
+
+  async updateCategory(id: number, data: Partial<InsertCategory>): Promise<Category | undefined> {
+    const category = this.categoriesData.get(id);
+    if (!category) return undefined;
+    const updated = { ...category, ...data };
+    this.categoriesData.set(id, updated);
+    await this.saveData();
+    return updated;
+  }
+
+  async deleteCategory(id: number): Promise<boolean> {
+    const deleted = this.categoriesData.delete(id);
+    if (deleted) await this.saveData();
+    return deleted;
+  }
+
+  // Locations methods
+  async getLocations(): Promise<Location[]> {
+    return Array.from(this.locationsData.values());
+  }
+
+  async getLocation(id: number): Promise<Location | undefined> {
+    return this.locationsData.get(id);
+  }
+
+  async createLocation(data: InsertLocation): Promise<Location> {
+    const id = this.currentLocationId++;
+    const location: Location = { 
+      id, 
+      name: data.name, 
+      description: data.description ?? null,
+      isActive: data.isActive ?? null
+    };
+    this.locationsData.set(id, location);
+    await this.saveData();
+    return location;
+  }
+
+  async updateLocation(id: number, data: Partial<InsertLocation>): Promise<Location | undefined> {
+    const location = this.locationsData.get(id);
+    if (!location) return undefined;
+    const updated = { ...location, ...data };
+    this.locationsData.set(id, updated);
+    await this.saveData();
+    return updated;
+  }
+
+  async deleteLocation(id: number): Promise<boolean> {
+    const deleted = this.locationsData.delete(id);
+    if (deleted) await this.saveData();
+    return deleted;
+  }
+
+  // Knowledge Areas methods
   async getKnowledgeAreas(): Promise<KnowledgeArea[]> {
     return Array.from(this.knowledgeAreasData.values());
   }
@@ -485,6 +510,7 @@ export class JsonStorage implements IStorage {
   async updateKnowledgeArea(id: number, data: Partial<InsertKnowledgeArea>): Promise<KnowledgeArea | undefined> {
     const existing = this.knowledgeAreasData.get(id);
     if (!existing) return undefined;
+
     const updated = { ...existing, ...data };
     this.knowledgeAreasData.set(id, updated);
     await this.saveData();
@@ -492,12 +518,14 @@ export class JsonStorage implements IStorage {
   }
 
   async deleteKnowledgeArea(id: number): Promise<boolean> {
-    const result = this.knowledgeAreasData.delete(id);
-    if (result) await this.saveData();
-    return result;
+    const deleted = this.knowledgeAreasData.delete(id);
+    if (deleted) {
+      await this.saveData();
+    }
+    return deleted;
   }
 
-  // Skill Categories
+  // Skill Categories methods
   async getSkillCategories(): Promise<SkillCategory[]> {
     return Array.from(this.skillCategoriesData.values());
   }
@@ -517,6 +545,7 @@ export class JsonStorage implements IStorage {
   async updateSkillCategory(id: number, data: Partial<InsertSkillCategory>): Promise<SkillCategory | undefined> {
     const existing = this.skillCategoriesData.get(id);
     if (!existing) return undefined;
+
     const updated = { ...existing, ...data };
     this.skillCategoriesData.set(id, updated);
     await this.saveData();
@@ -524,28 +553,30 @@ export class JsonStorage implements IStorage {
   }
 
   async deleteSkillCategory(id: number): Promise<boolean> {
-    const result = this.skillCategoriesData.delete(id);
-    if (result) await this.saveData();
-    return result;
+    const deleted = this.skillCategoriesData.delete(id);
+    if (deleted) {
+      await this.saveData();
+    }
+    return deleted;
   }
 
-  // Skills
+  // Skills methods
   async getSkills(): Promise<SkillWithDetails[]> {
-    const skills = Array.from(this.skillsData.values());
-    return skills.map(skill => ({
+    return Array.from(this.skillsData.values()).map(skill => ({
       ...skill,
-      category: skill.categoryId ? this.skillCategoriesData.get(skill.categoryId) : undefined,
-      knowledgeArea: skill.knowledgeAreaId ? this.knowledgeAreasData.get(skill.knowledgeAreaId) : undefined,
+      category: this.skillCategoriesData.get(skill.categoryId),
+      knowledgeArea: this.knowledgeAreasData.get(skill.knowledgeAreaId)
     }));
   }
 
   async getSkill(id: number): Promise<SkillWithDetails | undefined> {
     const skill = this.skillsData.get(id);
     if (!skill) return undefined;
+
     return {
       ...skill,
-      category: skill.categoryId ? this.skillCategoriesData.get(skill.categoryId) : undefined,
-      knowledgeArea: skill.knowledgeAreaId ? this.knowledgeAreasData.get(skill.knowledgeAreaId) : undefined,
+      category: this.skillCategoriesData.get(skill.categoryId),
+      knowledgeArea: this.knowledgeAreasData.get(skill.knowledgeAreaId)
     };
   }
 
@@ -560,6 +591,7 @@ export class JsonStorage implements IStorage {
   async updateSkill(id: number, data: Partial<InsertSkill>): Promise<Skill | undefined> {
     const existing = this.skillsData.get(id);
     if (!existing) return undefined;
+
     const updated = { ...existing, ...data };
     this.skillsData.set(id, updated);
     await this.saveData();
@@ -567,23 +599,47 @@ export class JsonStorage implements IStorage {
   }
 
   async deleteSkill(id: number): Promise<boolean> {
-    const result = this.skillsData.delete(id);
-    if (result) await this.saveData();
-    return result;
+    const deleted = this.skillsData.delete(id);
+    if (deleted) {
+      await this.saveData();
+    }
+    return deleted;
   }
 
-  // Scales
+  private normalizeScaleValues(values: { value: string; order: number; }[]): string[] {
+    return values
+      .sort((a, b) => a.order - b.order)
+      .map(v => v.value);
+  }
+
+  // Scales methods
   async getScales(): Promise<Scale[]> {
-    return Array.from(this.scalesData.values());
+    return Array.from(this.scalesData.values()).map(scale => ({
+      ...scale,
+      values: Array.isArray(scale.values) 
+        ? scale.values 
+        : typeof scale.values === 'object' && scale.values !== null
+          ? this.normalizeScaleValues(Object.entries(scale.values).map(([value, order]) => ({ value, order: Number(order) })))
+          : []
+    }));
   }
 
-  async getScale(id: number): Promise<Scale | undefined> {
-    return this.scalesData.get(id);
+  async getScale(id: number): Promise<Scale | null> {
+    const scale = this.scalesData.get(id);
+    if (!scale) return null;
+
+    return {
+      ...scale,
+      values: Array.isArray(scale.values) 
+        ? scale.values 
+        : typeof scale.values === 'object' && scale.values !== null
+          ? this.normalizeScaleValues(Object.entries(scale.values).map(([value, order]) => ({ value, order: Number(order) })))
+          : []
+    };
   }
 
   async getScalesByCategory(categoryId: number): Promise<Scale[]> {
-    const scales = Array.from(this.scalesData.values());
-    return scales.filter(scale => scale.categoryId === categoryId);
+    return Array.from(this.scalesData.values());
   }
 
   async createScale(data: InsertScale): Promise<Scale> {
@@ -597,6 +653,7 @@ export class JsonStorage implements IStorage {
   async updateScale(id: number, data: Partial<InsertScale>): Promise<Scale | undefined> {
     const existing = this.scalesData.get(id);
     if (!existing) return undefined;
+
     const updated = { ...existing, ...data };
     this.scalesData.set(id, updated);
     await this.saveData();
@@ -604,52 +661,120 @@ export class JsonStorage implements IStorage {
   }
 
   async deleteScale(id: number): Promise<boolean> {
-    const result = this.scalesData.delete(id);
-    if (result) await this.saveData();
-    return result;
+    const deleted = this.scalesData.delete(id);
+    if (deleted) {
+      await this.saveData();
+    }
+    return deleted;
   }
 
-  // Members
+  // Clients methods
+  async getClients(): Promise<Client[]> {
+    return Array.from(this.clientsData.values());
+  }
+
+  async getClient(id: number): Promise<Client | undefined> {
+    return this.clientsData.get(id);
+  }
+
+  async createClient(data: InsertClient): Promise<Client> {
+    const id = this.currentClientId++;
+    const client: Client = { ...data, id };
+    this.clientsData.set(id, client);
+    await this.saveData();
+    return client;
+  }
+
+  async updateClient(id: number, data: Partial<InsertClient>): Promise<Client | undefined> {
+    const existing = this.clientsData.get(id);
+    if (!existing) return undefined;
+
+    const updated = { ...existing, ...data };
+    this.clientsData.set(id, updated);
+    await this.saveData();
+    return updated;
+  }
+
+  async deleteClient(id: number): Promise<boolean> {
+    const deleted = this.clientsData.delete(id);
+    if (deleted) {
+      await this.saveData();
+    }
+    return deleted;
+  }
+
+  // Members methods
   async getMembers(): Promise<MemberWithSkills[]> {
-    const members = Array.from(this.membersData.values());
-    return members.map(member => ({
-      ...member,
-      profile: this.memberProfilesData.get(member.id),
-      skills: Array.from(this.memberSkillsData.values())
+    return Array.from(this.membersData.values()).map(member => {
+      const profile = Array.from(this.memberProfilesData.values()).find(p => p.memberId === member.id);
+      const skills = Array.from(this.memberSkillsData.values())
         .filter(ms => ms.memberId === member.id)
         .map(ms => ({
           ...ms,
-          skill: this.skillsData.get(ms.skillId!)!
-        })),
-      learningGoals: Array.from(this.learningGoalsData.values())
+          skill: this.skillsData.get(ms.skillId)!
+        }));
+      const learningGoals = Array.from(this.learningGoalsData.values())
         .filter(lg => lg.memberId === member.id)
         .map(lg => ({
           ...lg,
-          skill: this.skillsData.get(lg.skillId!)!
-        }))
-    }));
+          skill: this.skillsData.get(lg.skillId)!
+        }));
+
+      // Enrich with category and location names based on IDs
+      console.log(`Member ${member.id} enrichment - categoryId: ${member.categoryId}, locationId: ${member.locationId}`);
+      console.log(`Available categories: ${Array.from(this.categoriesData.keys())}`);
+      console.log(`Available locations: ${Array.from(this.locationsData.keys())}`);
+      
+      const categoryName = member.categoryId ? this.categoriesData.get(member.categoryId)?.name : undefined;
+      const locationName = member.locationId ? this.locationsData.get(member.locationId)?.name : undefined;
+      const clientName = member.currentClientId ? this.clientsData.get(member.currentClientId)?.name : undefined;
+      
+      console.log(`Enriched names - category: ${categoryName}, location: ${locationName}, client: ${clientName}`);
+      
+      return {
+        ...member,
+        category: categoryName || 'Unknown',
+        location: locationName || 'Unknown',
+        currentClient: clientName || 'TalentPool',
+        profile,
+        skills,
+        learningGoals
+      } as MemberWithSkills;
+    });
   }
 
   async getMember(id: number): Promise<MemberWithSkills | undefined> {
     const member = this.membersData.get(id);
     if (!member) return undefined;
-    
+
+    const profile = Array.from(this.memberProfilesData.values()).find(p => p.memberId === id);
+    const skills = Array.from(this.memberSkillsData.values())
+      .filter(ms => ms.memberId === id)
+      .map(ms => ({
+        ...ms,
+        skill: this.skillsData.get(ms.skillId)!
+      }));
+    const learningGoals = Array.from(this.learningGoalsData.values())
+      .filter(lg => lg.memberId === id)
+      .map(lg => ({
+        ...lg,
+        skill: this.skillsData.get(lg.skillId)!
+      }));
+
+    // Enrich with category and location names based on IDs
+    const categoryName = member.categoryId ? this.categoriesData.get(member.categoryId)?.name : undefined;
+    const locationName = member.locationId ? this.locationsData.get(member.locationId)?.name : undefined;
+    const clientName = member.currentClientId ? this.clientsData.get(member.currentClientId)?.name : undefined;
+
     return {
       ...member,
-      profile: this.memberProfilesData.get(member.id),
-      skills: Array.from(this.memberSkillsData.values())
-        .filter(ms => ms.memberId === id)
-        .map(ms => ({
-          ...ms,
-          skill: this.skillsData.get(ms.skillId!)!
-        })),
-      learningGoals: Array.from(this.learningGoalsData.values())
-        .filter(lg => lg.memberId === id)
-        .map(lg => ({
-          ...lg,
-          skill: this.skillsData.get(lg.skillId!)!
-        }))
-    };
+      category: categoryName || 'Unknown',
+      location: locationName || 'Unknown',
+      currentClient: clientName || 'TalentPool',
+      profile,
+      skills,
+      learningGoals
+    } as MemberWithSkills;
   }
 
   async createMember(data: InsertMember): Promise<Member> {
@@ -663,26 +788,57 @@ export class JsonStorage implements IStorage {
   async updateMember(id: number, data: Partial<InsertMember>): Promise<Member | undefined> {
     const existing = this.membersData.get(id);
     if (!existing) return undefined;
+
     const updated = { ...existing, ...data };
     this.membersData.set(id, updated);
     await this.saveData();
-    return updated;
+    
+    // Return enriched member data
+    const enrichedMember = await this.getMember(id);
+    return enrichedMember as Member;
   }
 
   async deleteMember(id: number): Promise<boolean> {
-    const result = this.membersData.delete(id);
-    if (result) await this.saveData();
-    return result;
+    const deleted = this.membersData.delete(id);
+    if (deleted) {
+      // Also delete associated data
+      Array.from(this.memberProfilesData.entries()).forEach(([profileId, profile]) => {
+        if (profile.memberId === id) {
+          this.memberProfilesData.delete(profileId);
+        }
+      });
+      Array.from(this.memberSkillsData.entries()).forEach(([skillId, skill]) => {
+        if (skill.memberId === id) {
+          this.memberSkillsData.delete(skillId);
+        }
+      });
+      Array.from(this.learningGoalsData.entries()).forEach(([goalId, goal]) => {
+        if (goal.memberId === id) {
+          this.learningGoalsData.delete(goalId);
+        }
+      });
+      await this.saveData();
+    }
+    return deleted;
   }
 
-  // Member Profiles
+  // Member Profiles methods
   async getMemberProfile(memberId: number): Promise<MemberProfile | undefined> {
-    return Array.from(this.memberProfilesData.values()).find(p => p.memberId === memberId);
+    return Array.from(this.memberProfilesData.values()).find(profile => profile.memberId === memberId);
   }
 
   async createMemberProfile(data: InsertMemberProfile): Promise<MemberProfile> {
     const id = this.currentMemberProfileId++;
-    const profile: MemberProfile = { ...data, id };
+    const profile: MemberProfile = { 
+      ...data, 
+      id,
+      assignments: data.assignments || [],
+      roles: data.roles || [],
+      appreciations: data.appreciations || [],
+      feedbackComments: data.feedbackComments || [],
+      talentPoolPeriods: data.talentPoolPeriods || [],
+      clientHistory: data.clientHistory || []
+    };
     this.memberProfilesData.set(id, profile);
     await this.saveData();
     return profile;
@@ -691,6 +847,7 @@ export class JsonStorage implements IStorage {
   async updateMemberProfile(id: number, data: Partial<InsertMemberProfile>): Promise<MemberProfile | undefined> {
     const existing = this.memberProfilesData.get(id);
     if (!existing) return undefined;
+
     const updated = { ...existing, ...data };
     this.memberProfilesData.set(id, updated);
     await this.saveData();
@@ -698,18 +855,20 @@ export class JsonStorage implements IStorage {
   }
 
   async deleteMemberProfile(id: number): Promise<boolean> {
-    const result = this.memberProfilesData.delete(id);
-    if (result) await this.saveData();
-    return result;
+    const deleted = this.memberProfilesData.delete(id);
+    if (deleted) {
+      await this.saveData();
+    }
+    return deleted;
   }
 
-  // Member Skills
+  // Member Skills methods
   async getMemberSkills(memberId: number): Promise<(MemberSkill & { skill: Skill })[]> {
     return Array.from(this.memberSkillsData.values())
       .filter(ms => ms.memberId === memberId)
       .map(ms => ({
         ...ms,
-        skill: this.skillsData.get(ms.skillId!)!
+        skill: this.skillsData.get(ms.skillId)!
       }));
   }
 
@@ -724,6 +883,7 @@ export class JsonStorage implements IStorage {
   async updateMemberSkill(id: number, data: Partial<InsertMemberSkill>): Promise<MemberSkill | undefined> {
     const existing = this.memberSkillsData.get(id);
     if (!existing) return undefined;
+
     const updated = { ...existing, ...data };
     this.memberSkillsData.set(id, updated);
     await this.saveData();
@@ -731,21 +891,22 @@ export class JsonStorage implements IStorage {
   }
 
   async deleteMemberSkill(id: number): Promise<boolean> {
-    const result = this.memberSkillsData.delete(id);
-    if (result) await this.saveData();
-    return result;
+    const deleted = this.memberSkillsData.delete(id);
+    if (deleted) {
+      await this.saveData();
+    }
+    return deleted;
   }
 
-  // Learning Goals
+  // Learning Goals methods
   async getLearningGoals(memberId?: number): Promise<(LearningGoal & { skill: Skill; member: Member })[]> {
-    let goals = Array.from(this.learningGoalsData.values());
-    if (memberId) {
-      goals = goals.filter(lg => lg.memberId === memberId);
-    }
-    return goals.map(lg => ({
-      ...lg,
-      skill: this.skillsData.get(lg.skillId!)!,
-      member: this.membersData.get(lg.memberId!)!
+    const goals = Array.from(this.learningGoalsData.values());
+    const filteredGoals = memberId ? goals.filter(goal => goal.memberId === memberId) : goals;
+    
+    return filteredGoals.map(goal => ({
+      ...goal,
+      skill: this.skillsData.get(goal.skillId)!,
+      member: this.membersData.get(goal.memberId)!
     }));
   }
 
@@ -764,6 +925,7 @@ export class JsonStorage implements IStorage {
   async updateLearningGoal(id: number, data: Partial<InsertLearningGoal>): Promise<LearningGoal | undefined> {
     const existing = this.learningGoalsData.get(id);
     if (!existing) return undefined;
+
     const updated = { ...existing, ...data };
     this.learningGoalsData.set(id, updated);
     await this.saveData();
@@ -771,22 +933,24 @@ export class JsonStorage implements IStorage {
   }
 
   async deleteLearningGoal(id: number): Promise<boolean> {
-    const result = this.learningGoalsData.delete(id);
-    if (result) await this.saveData();
-    return result;
+    const deleted = this.learningGoalsData.delete(id);
+    if (deleted) {
+      await this.saveData();
+    }
+    return deleted;
   }
 
-  // Analytics
+  // Analytics methods
   async getCompanyStrengths(): Promise<{ name: string; count: number; percentage: number }[]> {
     const skillCounts = new Map<string, number>();
     const totalMembers = this.membersData.size;
 
-    for (const memberSkill of this.memberSkillsData.values()) {
-      const skill = this.skillsData.get(memberSkill.skillId!);
-      if (skill && (memberSkill.level === "Advanced" || memberSkill.level === "Expert")) {
+    Array.from(this.memberSkillsData.values()).forEach(memberSkill => {
+      const skill = this.skillsData.get(memberSkill.skillId);
+      if (skill) {
         skillCounts.set(skill.name, (skillCounts.get(skill.name) || 0) + 1);
       }
-    }
+    });
 
     return Array.from(skillCounts.entries())
       .map(([name, count]) => ({
@@ -802,12 +966,18 @@ export class JsonStorage implements IStorage {
     const skillCounts = new Map<string, number>();
     const totalMembers = this.membersData.size;
 
-    for (const memberSkill of this.memberSkillsData.values()) {
-      const skill = this.skillsData.get(memberSkill.skillId!);
-      if (skill && (memberSkill.level === "Beginner" || memberSkill.level === "Intermediate")) {
-        skillCounts.set(skill.name, (skillCounts.get(skill.name) || 0) + 1);
+    // Count how many members DON'T have each STRATEGIC skill
+    Array.from(this.skillsData.values()).forEach(skill => {
+      // Only process skills marked as strategic priority
+      if (skill.strategicPriority) {
+        const memberCount = Array.from(this.memberSkillsData.values())
+          .filter(ms => ms.skillId === skill.id).length;
+        const gap = totalMembers - memberCount;
+        if (gap > 0) {
+          skillCounts.set(skill.name, gap);
+        }
       }
-    }
+    });
 
     return Array.from(skillCounts.entries())
       .map(([name, count]) => ({
@@ -821,19 +991,39 @@ export class JsonStorage implements IStorage {
 
   async getStats(): Promise<{
     totalMembers: number;
-    activeSkills: number;
-    talentPool: number;
-    learningGoals: number;
+    totalSkills: number;
+    totalLearningGoals: number;
+    activeClients: number;
   }> {
+    // Count unique skills that are assigned to members
+    const activeSkills = new Set(Array.from(this.memberSkillsData.values()).map(ms => ms.skillId)).size;
+    
+    // Count active learning goals
+    const activeLearningGoals = Array.from(this.learningGoalsData.values()).filter(lg => 
+      lg.status === "active" || lg.status === "in_progress"
+    ).length;
+    
+    // Count unique active clients from member profiles client history
+    const activeClients = new Set();
+    Array.from(this.memberProfilesData.values()).forEach(profile => {
+      if (profile.clientHistory && Array.isArray(profile.clientHistory)) {
+        profile.clientHistory.forEach((history: any) => {
+          if (history.clientId && history.clientId !== "talent-pool") {
+            activeClients.add(history.clientId);
+          }
+        });
+      }
+    });
+    
     return {
       totalMembers: this.membersData.size,
-      activeSkills: this.memberSkillsData.size,
-      talentPool: Array.from(this.membersData.values()).filter(m => m.currentClient === "Talent Pool").length,
-      learningGoals: this.learningGoalsData.size
+      totalSkills: activeSkills,
+      totalLearningGoals: activeLearningGoals,
+      activeClients: activeClients.size
     };
   }
 
-  // Search and filtering
+  // Search members
   async searchMembers(filters: {
     name?: string;
     knowledgeArea?: string;
@@ -847,22 +1037,26 @@ export class JsonStorage implements IStorage {
       if (filters.name && !member.fullName.toLowerCase().includes(filters.name.toLowerCase())) {
         return false;
       }
-      
-      if (filters.category && filters.category !== "all" && member.category !== filters.category) {
-        return false;
+
+      if (filters.category && filters.category !== "all") {
+        const hasCategory = member.skills.some(skill => {
+          const category = this.skillCategoriesData.get(skill.skill.categoryId);
+          return category?.name.toLowerCase().includes(filters.category!.toLowerCase());
+        });
+        if (!hasCategory) return false;
       }
-      
+
       if (filters.client && filters.client !== "all" && member.currentClient !== filters.client) {
         return false;
       }
-      
+
       if (filters.skill) {
         const hasSkill = member.skills.some(skill => 
           skill.skill.name.toLowerCase().includes(filters.skill!.toLowerCase())
         );
         if (!hasSkill) return false;
       }
-      
+
       if (filters.knowledgeArea && filters.knowledgeArea !== "all") {
         const hasKnowledgeArea = member.skills.some(skill => {
           const knowledgeArea = skill.skill.knowledgeAreaId ? 
@@ -871,7 +1065,7 @@ export class JsonStorage implements IStorage {
         });
         if (!hasKnowledgeArea) return false;
       }
-      
+
       return true;
     });
   }

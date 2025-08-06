@@ -5,23 +5,16 @@ export const TECHIE_CATEGORIES = [
   { value: "Wizard", label: "Wizard", color: "bg-purple-100 text-purple-800" },
 ];
 
-export const CLIENTS = [
-  "Talent Pool",
-  "Lunavi",
-  "TechCorp",
-  "InnovateLab",
-  "Microsoft",
-  "Amazon",
-  "Google"
-];
+// Removed hardcoded CLIENTS array - use getAllClientsFromMembers() for dynamic client extraction
 
 export const getCategoryColor = (category: string) => {
   const found = TECHIE_CATEGORIES.find(cat => cat.value === category);
   return found?.color || "bg-gray-100 text-gray-800";
 };
 
-export const getInitials = (fullName: string) => {
-  return fullName
+export const getInitials = (name: string) => {
+  if (!name || typeof name !== 'string') return 'UN';
+  return name
     .split(" ")
     .map(name => name.charAt(0))
     .join("")

@@ -15,10 +15,13 @@ export function useAutoToast() {
       description,
       variant,
     });
-    
+
     // Auto-dismiss after 2 seconds
     setTimeout(dismiss, 2000);
   };
 
   return { showToast };
 }
+
+// Also export as default for convenience
+export default useAutoToast;

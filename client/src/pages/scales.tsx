@@ -15,7 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { useAutoToast } from "@/hooks/use-auto-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Plus, Trash2, Ruler, X, Edit2, ChevronUp, ChevronDown, GripVertical, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Trash2, Ruler, X, Edit2, ChevronUp, ChevronDown, GripVertical } from "lucide-react";
+
 import type { Scale } from "@shared/schema";
 
 const scaleSchema = z.object({
@@ -32,10 +33,10 @@ export default function Scales() {
   const { t } = useLanguage();
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
   const [scaleToDelete, setScaleToDelete] = useState<Scale | null>(null);
   const [scaleToEdit, setScaleToEdit] = useState<Scale | null>(null);
   const [currentValue, setCurrentValue] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const { showToast } = useAutoToast();
@@ -53,6 +54,8 @@ export default function Scales() {
   const { data: scales, isLoading } = useQuery({
     queryKey: ["/api/scales"],
   });
+
+
 
   const createScaleMutation = useMutation({
     mutationFn: async (data: ScaleFormData) => {
@@ -99,7 +102,7 @@ export default function Scales() {
 
   const updateScaleMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: ScaleFormData }) => {
-      return await apiRequest("PUT", `/api/scales/${id}`, data);
+      return await apiRequest("PATCH", `/api/scales/${id}`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/scales"] });
@@ -132,8 +135,11 @@ export default function Scales() {
 
   // Reset page when search changes
   const handleSearchChange = (term: string) => {
-    setSearchTerm(term);
-    setCurrentPage(1);
+    // Only reset page if search term actually changed
+    if (term !== searchTerm) {
+      setSearchTerm(term);
+      setCurrentPage(1);
+    }
   };
 
   // Handle page size change
@@ -203,10 +209,20 @@ export default function Scales() {
     {
       key: "values",
       title: "Values",
-      render: (values: string[] | {value: string, order: number}[]) => {
-        const displayValues = Array.isArray(values) 
-          ? values.map(v => typeof v === 'string' ? v : v.value)
-          : [];
+      render: (values: any, scale: Scale) => {
+        let displayValues: string[] = [];
+        
+        if (Array.isArray(values)) {
+          displayValues = values.map(v => {
+            if (typeof v === 'string') return v;
+            if (typeof v === 'object' && v.value) return v.value;
+            return String(v);
+          });
+        } else if (typeof values === 'object' && values !== null) {
+          // Handle case where values might be an object with numeric keys
+          const valueEntries = Object.entries(values);
+          displayValues = valueEntries.map(([key, val]) => String(val));
+        }
         
         return (
           <div className="flex flex-wrap gap-1">
@@ -289,9 +305,19 @@ export default function Scales() {
 
   const handleEditScale = (scale: Scale) => {
     setScaleToEdit(scale);
-    const simpleValues = Array.isArray(scale.values) 
-      ? scale.values.map(v => typeof v === 'string' ? v : v.value)
-      : [];
+    let simpleValues: string[] = [];
+    
+    if (Array.isArray(scale.values)) {
+      simpleValues = scale.values.map(v => {
+        if (typeof v === 'string') return v;
+        if (typeof v === 'object' && v.value) return v.value;
+        return String(v);
+      });
+    } else if (typeof scale.values === 'object' && scale.values !== null) {
+      // Handle case where values might be an object with numeric keys
+      const valueEntries = Object.entries(scale.values);
+      simpleValues = valueEntries.map(([key, val]) => String(val));
+    }
     
     form.reset({
       name: scale.name,
@@ -313,7 +339,8 @@ export default function Scales() {
       <Header
         title={t("scales")}
         subtitle="Gestiona las escalas de valoración"
-        showActions={false}
+        onAddClick={handleOpenAddModal}
+        addButtonText="Agregar Escala"
       />
 
       <main className="p-6">
@@ -326,18 +353,7 @@ export default function Scales() {
             </div>
           </div>
           
-          <div className="flex justify-between items-center">
-            <div className="text-sm text-gray-600 dark:text-gray-400">
-              Las escalas definen cómo medir el nivel de habilidades (1-5, Básico-Avanzado, etc.)
-            </div>
-            <Button 
-              className="bg-primary hover:bg-primary/90"
-              onClick={handleOpenAddModal}
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Add Scale
-            </Button>
-          </div>
+          
         </div>
 
         <DataTable
@@ -346,51 +362,21 @@ export default function Scales() {
           searchPlaceholder="Search scales..."
           onSearch={handleSearchChange}
           isLoading={isLoading}
+          currentPage={currentPage}
+          pageSize={pageSize}
+          totalItems={filteredScales.length}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(newSize) => {
+            const newTotalPages = Math.ceil(filteredScales.length / newSize);
+            setPageSize(newSize);
+            // Only reset to page 1 if current page would be out of bounds
+            if (currentPage > newTotalPages) {
+              setCurrentPage(Math.max(1, newTotalPages));
+            }
+          }}
+          paginationLabel="scales"
+          showPaginationDivider={false}
         />
-        
-        {/* Pagination Controls */}
-        <div className="flex items-center justify-between px-2 py-4">
-          <div className="flex items-center space-x-6 lg:space-x-8">
-            <div className="flex items-center space-x-2">
-              <p className="text-sm font-medium">Items per page</p>
-              <Select value={pageSize.toString()} onValueChange={handlePageSizeChange}>
-                <SelectTrigger className="h-8 w-[70px]">
-                  <SelectValue placeholder={pageSize} />
-                </SelectTrigger>
-                <SelectContent side="top">
-                  <SelectItem value="10">10</SelectItem>
-                  <SelectItem value="20">20</SelectItem>
-                  <SelectItem value="50">50</SelectItem>
-                  <SelectItem value="100">100</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex w-[100px] items-center justify-center text-sm font-medium">
-              Page {currentPage} of {totalPages}
-            </div>
-            <div className="text-sm text-gray-700 dark:text-gray-300">
-              Showing {startIndex + 1} to {Math.min(startIndex + pageSize, filteredScales.length)} of {filteredScales.length} scales
-            </div>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="outline"
-              className="h-8 w-8 p-0"
-              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-              disabled={currentPage <= 1}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              className="h-8 w-8 p-0"
-              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-              disabled={currentPage >= totalPages}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
 
         {/* Add Scale Dialog */}
         <Dialog open={showAddModal} onOpenChange={handleCloseAddModal}>

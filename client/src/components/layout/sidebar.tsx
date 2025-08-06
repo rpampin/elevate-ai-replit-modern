@@ -9,21 +9,37 @@ import {
   Ruler, 
   TrendingUp,
   Globe,
-  Settings
+  Settings,
+  Bot,
+  ShoppingCart,
+  Lightbulb,
+  Heart,
+  Factory
 } from "lucide-react";
 
 export default function Sidebar() {
   const [location] = useLocation();
   const { language, setLanguage, t } = useLanguage();
 
-  const navigation = [
+  const dashboardNavigation = [
     { name: t("dashboard"), href: "/dashboard", icon: BarChart3, current: location === "/" || location === "/dashboard" },
+    { name: language === 'es' ? 'Panel de Ventas' : 'Sales Dashboard', href: "/sales-dashboard", icon: ShoppingCart, current: location === "/sales-dashboard" },
+    { name: language === 'es' ? 'Panel de Soluciones' : 'Solutions Dashboard', href: "/solutions-dashboard", icon: Lightbulb, current: location === "/solutions-dashboard" },
+    { name: language === 'es' ? 'Panel de Personas' : 'People Dashboard', href: "/people-dashboard", icon: Heart, current: location === "/people-dashboard" },
+    { name: language === 'es' ? 'Panel de Producción' : 'Production Dashboard', href: "/production-dashboard", icon: Factory, current: location === "/production-dashboard" },
+  ];
+
+  const insightsNavigation = [
+    { name: t("analytics"), href: "/analytics", icon: TrendingUp, current: location === "/analytics" },
+    { name: "AI Assistant", href: "/ai-assistant", icon: Bot, current: location === "/ai-assistant" },
+  ];
+
+  const managementNavigation = [
     { name: t("members"), href: "/members", icon: Users, current: location === "/members" },
     { name: t("skills"), href: "/skills", icon: Cog, current: location === "/skills" },
     { name: t("knowledgeAreas"), href: "/knowledge-areas", icon: Brain, current: location === "/knowledge-areas" },
     { name: t("categories"), href: "/categories", icon: Tags, current: location === "/categories" },
     { name: t("scales"), href: "/scales", icon: Ruler, current: location === "/scales" },
-    { name: t("analytics"), href: "/analytics", icon: TrendingUp, current: location === "/analytics" },
   ];
 
   return (
@@ -40,20 +56,72 @@ export default function Sidebar() {
         </div>
       </div>
       
-      <nav className="mt-6 px-4 space-y-2">
-        {navigation.map((item) => {
-          const Icon = item.icon;
-          return (
-            <Link key={item.name} href={item.href} className={`nav-item flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors ${
-              item.current 
-                ? "nav-item-active" 
-                : "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-            }`}>
-              <Icon className="w-5 h-5" />
-              <span>{item.name}</span>
-            </Link>
-          );
-        })}
+      <nav className="mt-6 px-4 space-y-6">
+        {/* Dashboards Section */}
+        <div>
+          <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3 px-3">
+            {language === 'es' ? 'Paneles' : 'Dashboards'}
+          </h3>
+          <div className="space-y-1">
+            {dashboardNavigation.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link key={item.name} href={item.href} className={`nav-item flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors ${
+                  item.current 
+                    ? "nav-item-active" 
+                    : "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                }`}>
+                  <Icon className="w-5 h-5" />
+                  <span>{item.name}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Insights Section */}
+        <div>
+          <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3 px-3">
+            {language === 'es' ? 'Análisis' : 'Insights'}
+          </h3>
+          <div className="space-y-1">
+            {insightsNavigation.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link key={item.name} href={item.href} className={`nav-item flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors ${
+                  item.current 
+                    ? "nav-item-active" 
+                    : "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                }`}>
+                  <Icon className="w-5 h-5" />
+                  <span>{item.name}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Management Section */}
+        <div>
+          <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3 px-3">
+            Management
+          </h3>
+          <div className="space-y-1">
+            {managementNavigation.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link key={item.name} href={item.href} className={`nav-item flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors ${
+                  item.current 
+                    ? "nav-item-active" 
+                    : "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                }`}>
+                  <Icon className="w-5 h-5" />
+                  <span>{item.name}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
       </nav>
 
       <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200 dark:border-gray-700">

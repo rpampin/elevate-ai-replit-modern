@@ -396,6 +396,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Member Skills
+  app.post("/api/members/:memberId/skills", async (req, res) => {
+    try {
+      const memberId = parseInt(req.params.memberId);
+      if (isNaN(memberId)) {
+        return res.status(400).json({ error: "Invalid member ID" });
+      }
+      
+      const validatedData = insertMemberSkillSchema.parse({
+        ...req.body,
+        memberId
+      });
+      
+      const memberSkill = await storage.createMemberSkill(validatedData);
+      res.status(201).json(memberSkill);
+    } catch (error) {
+      console.error("Failed to add member skill:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: "Validation failed", 
+          errors: error.errors 
+        });
+      }
+      res.status(400).json({ message: "Invalid data provided" });
+    }
+  });
+
   // Learning Goals
   app.get("/api/learning-goals", async (req, res) => {
     try {

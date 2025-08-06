@@ -17,11 +17,14 @@ import {
   Brain,
   Award,
   AlertTriangle,
-  Download
+  Download,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from "recharts";
 import { getCategoryColor, getInitials } from "@/lib/constants";
-import type { MemberWithSkills } from "@shared/schema";
+import { getAllClientIdsFromMembers, getClientIdFromMember, getClientNameFromId } from "@/lib/client-utils";
+import type { MemberWithSkills, Client } from "@shared/schema";
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4'];
 
@@ -29,133 +32,163 @@ export default function Analytics() {
   const { t } = useLanguage();
   
   // State for radar chart filters
-  const [selectedSkillCategory, setSelectedSkillCategory] = useState<string>("all");
-  const [selectedTeamCategory, setSelectedTeamCategory] = useState<string>("all");
-  const [selectedClient, setSelectedClient] = useState<string>("all");
-  const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
-  const [viewMode, setViewMode] = useState<"categories" | "skills" | "knowledge-areas">("categories");
+  const [radarView, setRadarView] = useState<"knowledge-areas" | "categories" | "skills">("knowledge-areas");
+  const [selectedMemberCategory, setSelectedMemberCategory] = useState<string>("all");
+  const [selectedKnowledgeArea, setSelectedKnowledgeArea] = useState<string>("all");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  
+  // Show top 10 goals
+  const topGoalsLimit = 10;
 
   // Fetch data
-  const { data: stats, isLoading: statsLoading } = useQuery({
+  const { data: stats = {}, isLoading: statsLoading } = useQuery({
     queryKey: ["/api/analytics/stats"],
   });
 
-  const { data: companyStrengths, isLoading: strengthsLoading } = useQuery({
+  const { data: companyStrengths = [], isLoading: strengthsLoading } = useQuery({
     queryKey: ["/api/analytics/company-strengths"],
   });
 
-  const { data: skillGaps, isLoading: gapsLoading } = useQuery({
+  const { data: skillGaps = [], isLoading: gapsLoading } = useQuery({
     queryKey: ["/api/analytics/skill-gaps"],
   });
 
-  const { data: members, isLoading: membersLoading } = useQuery({
+  const { data: members = [], isLoading: membersLoading } = useQuery({
     queryKey: ["/api/members"],
   });
 
-  const { data: learningGoals, isLoading: goalsLoading } = useQuery({
-    queryKey: ["/api/learning-goals"],
-  });
-
-  const { data: skillCategories } = useQuery({
-    queryKey: ["/api/skill-categories"],
-  });
-
-  const { data: scales } = useQuery({
-    queryKey: ["/api/scales"],
-  });
-
-  const { data: skills } = useQuery({
-    queryKey: ["/api/skills"],
-  });
-
-  const { data: knowledgeAreas } = useQuery({
+  const { data: knowledgeAreas = [], isLoading: knowledgeAreasLoading } = useQuery({
     queryKey: ["/api/knowledge-areas"],
   });
 
-  // Analytics calculations
-  const getCategoryDistribution = () => {
-    if (!members) return [];
-    
-    const distribution = members.reduce((acc: any, member: MemberWithSkills) => {
-      acc[member.category] = (acc[member.category] || 0) + 1;
-      return acc;
-    }, {});
+  const { data: skillCategories = [], isLoading: categoriesLoading } = useQuery({
+    queryKey: ["/api/skill-categories"],
+  });
 
-    return Object.entries(distribution).map(([category, count]) => ({
-      name: category,
-      value: count as number,
-    }));
+  const { data: skills = [], isLoading: skillsLoading } = useQuery({
+    queryKey: ["/api/skills"],
+  });
+
+  const { data: scales = [], isLoading: scalesLoading } = useQuery({
+    queryKey: ["/api/scales"],
+  });
+
+  const { data: learningGoals = [], isLoading: learningGoalsLoading } = useQuery({
+    queryKey: ["/api/learning-goals"],
+  });
+
+  const { data: clients = [], isLoading: clientsLoading } = useQuery({
+    queryKey: ["/api/clients"],
+  });
+
+  const { data: memberCategories = [], isLoading: memberCategoriesLoading } = useQuery({
+    queryKey: ["/api/categories"],
+  });
+
+  // Helper function to convert skill levels to numeric values
+  const getNumericLevel = (scale: any, level: string): number => {
+    if (!scale || !level) return 0;
+    
+    if (scale.values && typeof scale.values === 'object' && !Array.isArray(scale.values)) {
+      const levelValue = (scale.values as any)[level];
+      if (levelValue !== undefined) {
+        const values = Object.values(scale.values as Record<string, number>);
+        const maxValue = Math.max(...values.filter(v => typeof v === 'number'));
+        return (levelValue / maxValue) * 100;
+      }
+    } else if (scale.values && Array.isArray(scale.values)) {
+      const valueIndex = scale.values.findIndex((v: any) => 
+        (typeof v === 'string' ? v : v.value) === level
+      );
+      if (valueIndex !== -1) {
+        return ((valueIndex + 1) / scale.values.length) * 100;
+      }
+    } else if (scale.type === 'quantitative' && !isNaN(Number(level))) {
+      const maxValue = 5;
+      return (Number(level) / maxValue) * 100;
+    }
+    
+    return 0;
   };
 
-  const getClientDistribution = () => {
-    if (!members) return [];
-    
-    const distribution = members.reduce((acc: any, member: MemberWithSkills) => {
-      const client = member.currentClient || "Talent Pool";
-      acc[client] = (acc[client] || 0) + 1;
-      return acc;
-    }, {});
+  // Knowledge Areas radar data preparation (shows knowledge areas, filters by member category only)
+  const prepareKnowledgeAreasRadarData = () => {
+    if (!members || !knowledgeAreas || !scales || !skillCategories || !skills || 
+        !Array.isArray(members) || !Array.isArray(knowledgeAreas) || !Array.isArray(scales)) {
+      return [];
+    }
 
-    return Object.entries(distribution).map(([client, count]) => ({
-      name: client,
-      value: count as number,
-    }));
-  };
+    // Filter members by member category
+    let filteredMembers = members;
+    if (selectedMemberCategory !== "all") {
+      filteredMembers = filteredMembers.filter((member: MemberWithSkills) => member.category === selectedMemberCategory);
+    }
 
-  const getTopPerformers = () => {
-    if (!members) return [];
+    // Calculate average skill levels per knowledge area
+    const areaStats = new Map();
     
-    return members
-      .filter((member: MemberWithSkills) => member.skills.length > 0)
-      .sort((a: MemberWithSkills, b: MemberWithSkills) => b.skills.length - a.skills.length)
-      .slice(0, 5)
-      .map((member: MemberWithSkills) => ({
-        name: member.fullName,
-        skillCount: member.skills.length,
-        category: member.category,
-        client: member.currentClient || "Talent Pool",
+    knowledgeAreas.forEach((area: any) => {
+      areaStats.set(area.id, {
+        name: area.name,
+        totalLevels: 0,
+        memberCount: 0,
+        averageLevel: 0
+      });
+    });
+
+    filteredMembers.forEach((member: MemberWithSkills) => {
+      if (!member.skills || !Array.isArray(member.skills)) return;
+      
+      const memberAreaLevels = new Map();
+      
+      member.skills.forEach((memberSkill: any) => {
+        const skill = skills?.find((s: any) => s.id === memberSkill.skillId);
+        const category = skillCategories?.find((c: any) => c.id === skill?.categoryId);
+        const areaId = category?.knowledgeAreaId;
+        
+        if (!areaId) return;
+
+        const scale = scales.find((s: any) => s.id === memberSkill.scaleId) || scales[0];
+        const numericLevel = getNumericLevel(scale, memberSkill.level);
+
+        if (!memberAreaLevels.has(areaId)) {
+          memberAreaLevels.set(areaId, { total: 0, count: 0 });
+        }
+        
+        const areaLevel = memberAreaLevels.get(areaId);
+        areaLevel.total += numericLevel;
+        areaLevel.count += 1;
+      });
+
+      // Add this member's area averages to the overall stats
+      memberAreaLevels.forEach((level, areaId) => {
+        const areaData = areaStats.get(areaId);
+        if (areaData) {
+          const memberAverage = level.total / level.count;
+          areaData.totalLevels += memberAverage;
+          areaData.memberCount += 1;
+          areaData.averageLevel = areaData.totalLevels / areaData.memberCount;
+        }
+      });
+    });
+
+    return Array.from(areaStats.values())
+      .filter(area => area.memberCount > 0)
+      .map(area => ({
+        category: area.name,
+        level: Math.round(area.averageLevel),
+        memberCount: area.memberCount
       }));
   };
 
-  const getActiveGoalsBySkill = () => {
-    if (!learningGoals || !Array.isArray(learningGoals)) return [];
-    
-    const goalsBySkill = learningGoals.reduce((acc: any, goal: any) => {
-      if (goal.status === "active") {
-        acc[goal.skill.name] = (acc[goal.skill.name] || 0) + 1;
-      }
-      return acc;
-    }, {});
-
-    return Object.entries(goalsBySkill)
-      .map(([skill, count]) => ({
-        name: skill,
-        goals: count as number,
-      }))
-      .sort((a, b) => b.goals - a.goals)
-      .slice(0, 8);
-  };
-
-  // Radar chart data preparation
-  const prepareTeamRadarData = () => {
+  // Categories radar data preparation (shows categories, filters by knowledge areas + member categories)
+  const prepareCategoriesRadarData = () => {
     if (!members || !skillCategories || !scales || !Array.isArray(members) || !Array.isArray(skillCategories) || !Array.isArray(scales)) return [];
 
-    // Filter members based on selection
+    // Filter members by member category
     let filteredMembers = members;
-    
-    if (selectedTeamCategory !== "all") {
-      filteredMembers = filteredMembers.filter((member: MemberWithSkills) => member.category === selectedTeamCategory);
-    }
-    
-    if (selectedClient !== "all") {
-      const clientFilter = selectedClient === "talent-pool" ? null : selectedClient;
-      filteredMembers = filteredMembers.filter((member: MemberWithSkills) => member.currentClient === clientFilter);
-    }
-    
-    if (selectedMembers.length > 0) {
-      filteredMembers = filteredMembers.filter((member: MemberWithSkills) => 
-        selectedMembers.includes(member.id.toString())
-      );
+    if (selectedMemberCategory !== "all") {
+      filteredMembers = filteredMembers.filter((member: MemberWithSkills) => member.category === selectedMemberCategory);
     }
 
     // Calculate average skill levels per category across filtered members
@@ -164,10 +197,9 @@ export default function Analytics() {
     skillCategories.forEach((category: any) => {
       categoryStats.set(category.id, {
         name: category.name,
-        totalSkills: 0,
         totalLevels: 0,
-        averageLevel: 0,
-        memberCount: 0
+        memberCount: 0,
+        averageLevel: 0
       });
     });
 
@@ -177,24 +209,12 @@ export default function Analytics() {
       const memberCategoryLevels = new Map();
       
       member.skills.forEach((memberSkill: any) => {
-        const categoryId = memberSkill.skill?.categoryId;
-        if (!categoryId) return;
+        const skill = skills?.find((s: any) => s.id === memberSkill.skillId);
+        const categoryId = skill?.categoryId;
+        if (!categoryId || !categoryStats.has(categoryId)) return;
 
-        const scale = scales.find((s: any) => s.id === memberSkill.scaleId);
-        if (!scale) return;
-
-        let numericLevel = 0;
-        if (scale.values && Array.isArray(scale.values)) {
-          const valueIndex = scale.values.findIndex((v: any) => 
-            (typeof v === 'string' ? v : v.value) === memberSkill.level
-          );
-          if (valueIndex !== -1) {
-            numericLevel = ((valueIndex + 1) / scale.values.length) * 100;
-          }
-        } else if (scale.type === 'quantitative' && !isNaN(Number(memberSkill.level))) {
-          const maxValue = 5;
-          numericLevel = (Number(memberSkill.level) / maxValue) * 100;
-        }
+        const scale = scales.find((s: any) => s.id === memberSkill.scaleId) || scales[0];
+        const numericLevel = getNumericLevel(scale, memberSkill.level);
 
         if (!memberCategoryLevels.has(categoryId)) {
           memberCategoryLevels.set(categoryId, { total: 0, count: 0 });
@@ -226,39 +246,33 @@ export default function Analytics() {
       }));
   };
 
-  const getUniqueCategories = () => {
-    if (!members || !Array.isArray(members)) return [];
-    return [...new Set(members.map((m: MemberWithSkills) => m.category))];
-  };
-
-  const getUniqueClients = () => {
-    if (!members || !Array.isArray(members)) return [];
-    const clients = members.map((m: MemberWithSkills) => m.currentClient || "Talent Pool");
-    return [...new Set(clients)];
-  };
-
-  // Skills radar data preparation
+  // Skills radar data preparation (shows skills, filters by knowledge areas + categories + member categories)
   const prepareSkillsRadarData = () => {
-    if (!members || !skills || !scales || !Array.isArray(members) || !Array.isArray(skills) || !Array.isArray(scales)) return [];
+    if (!members || !skills || !scales || !Array.isArray(members) || !Array.isArray(skills) || !Array.isArray(scales)) {
+      return [];
+    }
 
-    // Filter members based on selection
+    // Filter members by member category
     let filteredMembers = members;
-    
-    if (selectedTeamCategory !== "all") {
-      filteredMembers = filteredMembers.filter((member: MemberWithSkills) => member.category === selectedTeamCategory);
-    }
-    
-    if (selectedClient !== "all") {
-      const clientFilter = selectedClient === "talent-pool" ? null : selectedClient;
-      filteredMembers = filteredMembers.filter((member: MemberWithSkills) => member.currentClient === clientFilter);
+    if (selectedMemberCategory !== "all") {
+      filteredMembers = filteredMembers.filter((member: MemberWithSkills) => member.category === selectedMemberCategory);
     }
 
-    // Get skills for the selected skill category or all skills
+    // Filter skills by knowledge area and category
     let relevantSkills = skills;
-    if (selectedSkillCategory !== "all" && skillCategories && Array.isArray(skillCategories)) {
-      const categoryId = skillCategories.find((cat: any) => cat.name === selectedSkillCategory)?.id;
+    
+    if (selectedKnowledgeArea !== "all" && knowledgeAreas && skillCategories) {
+      const areaId = knowledgeAreas.find((area: any) => area.name === selectedKnowledgeArea)?.id;
+      if (areaId) {
+        const categoryIds = skillCategories.filter((cat: any) => cat.knowledgeAreaId === areaId).map((cat: any) => cat.id);
+        relevantSkills = skills.filter((skill: any) => categoryIds.includes(skill.categoryId));
+      }
+    }
+    
+    if (selectedCategory !== "all" && skillCategories) {
+      const categoryId = skillCategories.find((cat: any) => cat.name === selectedCategory)?.id;
       if (categoryId) {
-        relevantSkills = skills.filter((skill: any) => skill.categoryId === categoryId);
+        relevantSkills = relevantSkills.filter((skill: any) => skill.categoryId === categoryId);
       }
     }
 
@@ -278,24 +292,11 @@ export default function Analytics() {
       if (!member.skills || !Array.isArray(member.skills)) return;
       
       member.skills.forEach((memberSkill: any) => {
-        const skillId = memberSkill.skill?.id;
+        const skillId = memberSkill.skillId;
         if (!skillId || !skillStats.has(skillId)) return;
 
-        const scale = scales.find((s: any) => s.id === memberSkill.scaleId);
-        if (!scale) return;
-
-        let numericLevel = 0;
-        if (scale.values && Array.isArray(scale.values)) {
-          const valueIndex = scale.values.findIndex((v: any) => 
-            (typeof v === 'string' ? v : v.value) === memberSkill.level
-          );
-          if (valueIndex !== -1) {
-            numericLevel = ((valueIndex + 1) / scale.values.length) * 100;
-          }
-        } else if (scale.type === 'quantitative' && !isNaN(Number(memberSkill.level))) {
-          const maxValue = 5;
-          numericLevel = (Number(memberSkill.level) / maxValue) * 100;
-        }
+        const scale = scales.find((s: any) => s.id === memberSkill.scaleId) || scales[0];
+        const numericLevel = getNumericLevel(scale, memberSkill.level);
 
         const skillData = skillStats.get(skillId);
         if (skillData) {
@@ -306,7 +307,7 @@ export default function Analytics() {
       });
     });
 
-    return Array.from(skillStats.values())
+    const result = Array.from(skillStats.values())
       .filter(skill => skill.memberCount > 0)
       .sort((a, b) => b.averageLevel - a.averageLevel)
       .slice(0, 12) // Limit to top 12 skills for readability
@@ -315,93 +316,115 @@ export default function Analytics() {
         level: Math.round(skill.averageLevel),
         memberCount: skill.memberCount
       }));
+
+    return result;
   };
 
-  // Knowledge areas radar data preparation
-  const prepareKnowledgeAreasRadarData = () => {
-    if (!members || !skills || !scales || !knowledgeAreas || !Array.isArray(members) || !Array.isArray(skills) || !Array.isArray(scales) || !Array.isArray(knowledgeAreas)) return [];
-
-    // Filter members based on selection
-    let filteredMembers = members;
+  // Analytics calculations
+  const getCategoryDistribution = () => {
+    if (!Array.isArray(members)) return [];
     
-    if (selectedTeamCategory !== "all") {
-      filteredMembers = filteredMembers.filter((member: MemberWithSkills) => member.category === selectedTeamCategory);
-    }
+    const distribution = (members as MemberWithSkills[]).reduce((acc: Record<string, number>, member: MemberWithSkills) => {
+      const category = member.category || 'Unknown';
+      acc[category] = (acc[category] || 0) + 1;
+      return acc;
+    }, {});
+
+    return Object.entries(distribution).map(([category, count]) => ({
+      name: category,
+      value: count as number,
+    }));
+  };
+
+  const getClientDistribution = () => {
+    if (!Array.isArray(members)) return [];
     
-    if (selectedClient !== "all") {
-      const clientFilter = selectedClient === "talent-pool" ? null : selectedClient;
-      filteredMembers = filteredMembers.filter((member: MemberWithSkills) => member.currentClient === clientFilter);
-    }
+    const distribution = (members as MemberWithSkills[]).reduce((acc: Record<string, number>, member: MemberWithSkills) => {
+      const client = member.currentClientId ? getClientNameFromId(member.currentClientId, clients) : "Talent Pool";
+      acc[client] = (acc[client] || 0) + 1;
+      return acc;
+    }, {});
 
-    // Calculate average skill levels per knowledge area across filtered members
-    const knowledgeAreaStats = new Map();
+    return Object.entries(distribution)
+      .map(([client, count]) => ({
+        name: client,
+        value: count as number,
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5);
+  };
+
+  const getTopPerformers = () => {
+    if (!Array.isArray(members)) return [];
     
-    knowledgeAreas.forEach((area: any) => {
-      knowledgeAreaStats.set(area.id, {
-        name: area.name,
-        totalLevels: 0,
-        memberCount: 0,
-        averageLevel: 0
-      });
-    });
-
-    filteredMembers.forEach((member: MemberWithSkills) => {
-      if (!member.skills || !Array.isArray(member.skills)) return;
-      
-      member.skills.forEach((memberSkill: any) => {
-        const skill = skills.find((s: any) => s.id === memberSkill.skill?.id);
-        if (!skill || !skill.knowledgeAreaId) return;
-
-        const scale = scales.find((s: any) => s.id === memberSkill.scaleId);
-        if (!scale) return;
-
-        let numericLevel = 0;
-        if (scale.values && Array.isArray(scale.values)) {
-          const valueIndex = scale.values.findIndex((v: any) => 
-            (typeof v === 'string' ? v : v.value) === memberSkill.level
-          );
-          if (valueIndex !== -1) {
-            numericLevel = ((valueIndex + 1) / scale.values.length) * 100;
-          }
-        } else if (scale.type === 'quantitative' && !isNaN(Number(memberSkill.level))) {
-          const maxValue = 5;
-          numericLevel = (Number(memberSkill.level) / maxValue) * 100;
-        }
-
-        const areaData = knowledgeAreaStats.get(skill.knowledgeAreaId);
-        if (areaData) {
-          areaData.totalLevels += numericLevel;
-          areaData.memberCount += 1;
-          areaData.averageLevel = areaData.totalLevels / areaData.memberCount;
-        }
-      });
-    });
-
-    return Array.from(knowledgeAreaStats.values())
-      .filter(area => area.memberCount > 0)
-      .sort((a, b) => b.averageLevel - a.averageLevel)
-      .map(area => ({
-        category: area.name,
-        level: Math.round(area.averageLevel),
-        memberCount: area.memberCount
+    return (members as MemberWithSkills[])
+      .filter((member: MemberWithSkills) => member.skills && member.skills.length > 0)
+      .sort((a: MemberWithSkills, b: MemberWithSkills) => b.skills.length - a.skills.length)
+      .slice(0, 5)
+      .map((member: MemberWithSkills) => ({
+        name: member.name || 'Unknown',
+        skills: member.skills.length,
+        category: member.category || 'Unknown',
+        id: member.id,
       }));
   };
 
+  const getActiveGoalsBySkill = () => {
+    if (!Array.isArray(learningGoals) || !Array.isArray(skills)) return [];
+    
+    const goalsBySkill = (learningGoals as any[]).reduce((acc: Record<string, number>, goal: any) => {
+      const skill = (skills as any[]).find((s: any) => s.id === goal.skillId);
+      if (skill) {
+        acc[skill.name] = (acc[skill.name] || 0) + 1;
+      }
+      return acc;
+    }, {});
+
+    return Object.entries(goalsBySkill)
+      .map(([skill, count]) => ({
+        name: skill,
+        goals: count as number,
+      }))
+      .sort((a, b) => b.goals - a.goals)
+      .slice(0, 8);
+  };
+
+  // Get unique member categories from members
+  const getUniqueMemberCategories = () => {
+    if (!members || !Array.isArray(members)) return [];
+    return Array.from(new Set((members as MemberWithSkills[]).map((m: MemberWithSkills) => m.category).filter(Boolean)));
+  };
+
+  // Prepare data based on current view
+  const getCurrentRadarData = () => {
+    switch (radarView) {
+      case "knowledge-areas":
+        return prepareKnowledgeAreasRadarData();
+      case "categories":
+        return prepareCategoriesRadarData();
+      case "skills":
+        return prepareSkillsRadarData();
+      default:
+        return [];
+    }
+  };
+
+  const currentRadarData = getCurrentRadarData();
+  const uniqueMemberCategories = getUniqueMemberCategories();
+  
+  // Prepare analytics data
   const categoryData = getCategoryDistribution();
   const clientData = getClientDistribution();
   const topPerformers = getTopPerformers();
   const goalsBySkill = getActiveGoalsBySkill();
-  const teamRadarData = prepareTeamRadarData();
-  const skillsRadarData = prepareSkillsRadarData();
-  const knowledgeAreasRadarData = prepareKnowledgeAreasRadarData();
-  const uniqueCategories = getUniqueCategories();
-  const uniqueClients = getUniqueClients();
-  
-  // Get the appropriate data based on view mode
-  const currentRadarData = 
-    viewMode === "categories" ? teamRadarData :
-    viewMode === "skills" ? skillsRadarData :
-    knowledgeAreasRadarData;
+
+  // Reset filters when view changes
+  const handleViewChange = (newView: "knowledge-areas" | "categories" | "skills") => {
+    setRadarView(newView);
+    setSelectedKnowledgeArea("all");
+    setSelectedCategory("all");
+    setSelectedMemberCategory("all");
+  };
 
   return (
     <>
@@ -416,27 +439,27 @@ export default function Analytics() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatsCard
             title="Total Techies"
-            value={statsLoading ? "..." : stats?.totalMembers || 0}
+            value={statsLoading ? "..." : (stats as any)?.totalMembers || 0}
             icon={Users}
             change={{ value: "+12%", trend: "up", period: "vs mes anterior" }}
           />
           <StatsCard
             title="Habilidades Únicas"
-            value={statsLoading ? "..." : stats?.activeSkills || 0}
+            value={statsLoading ? "..." : (stats as any)?.activeSkills || 0}
             icon={Brain}
             change={{ value: "+8%", trend: "up", period: "nuevas este mes" }}
             iconColor="text-purple-600"
           />
           <StatsCard
             title="En Talent Pool"
-            value={statsLoading ? "..." : stats?.talentPool || 0}
+            value={statsLoading ? "..." : (stats as any)?.talentPool || 0}
             icon={AlertTriangle}
             change={{ value: "-3%", trend: "down", period: "vs mes anterior" }}
             iconColor="text-yellow-600"
           />
           <StatsCard
             title="Metas Activas"
-            value={statsLoading ? "..." : stats?.learningGoals || 0}
+            value={statsLoading ? "..." : (stats as any)?.learningGoals || 0}
             icon={Target}
             change={{ value: "+24%", trend: "up", period: "este mes" }}
             iconColor="text-green-600"
@@ -451,58 +474,90 @@ export default function Analytics() {
               Team Skills Radar
             </CardTitle>
             <CardDescription>
-              {viewMode === "categories" 
-                ? "Compare skill proficiency levels across categories with filtering options"
-                : viewMode === "skills"
-                ? "View individual skill proficiency levels with filtering options"
-                : "View skill proficiency levels grouped by knowledge areas"
+              {radarView === "knowledge-areas" 
+                ? "View skill proficiency levels grouped by knowledge areas, filtered by member categories"
+                : radarView === "categories"
+                ? "View skill proficiency levels grouped by categories, filtered by member categories"
+                : "View individual skill proficiency levels, filtered by knowledge areas, categories, and member categories"
               }
             </CardDescription>
             
             {/* View Mode Toggle */}
             <div className="flex gap-2 mt-4">
               <Button
-                variant={viewMode === "categories" ? "default" : "outline"}
+                variant={radarView === "knowledge-areas" ? "default" : "outline"}
                 size="sm"
-                onClick={() => {
-                  setViewMode("categories");
-                  setSelectedSkillCategory("all"); // Reset skill category when not needed
-                }}
+                onClick={() => handleViewChange("knowledge-areas")}
+              >
+                Knowledge Areas
+              </Button>
+              <Button
+                variant={radarView === "categories" ? "default" : "outline"}
+                size="sm"
+                onClick={() => handleViewChange("categories")}
               >
                 Categories
               </Button>
               <Button
-                variant={viewMode === "skills" ? "default" : "outline"}
+                variant={radarView === "skills" ? "default" : "outline"}
                 size="sm"
-                onClick={() => setViewMode("skills")}
+                onClick={() => handleViewChange("skills")}
               >
                 Individual Skills
-              </Button>
-              <Button
-                variant={viewMode === "knowledge-areas" ? "default" : "outline"}
-                size="sm"
-                onClick={() => {
-                  setViewMode("knowledge-areas");
-                  setSelectedSkillCategory("all"); // Reset skill category when not needed
-                }}
-              >
-                Knowledge Areas
               </Button>
             </div>
             
             {/* Filters */}
             <div className="flex flex-wrap gap-4 mt-4">
-              {/* Only show skill category filter for Individual Skills view */}
-              {viewMode === "skills" && (
+              {/* Member Category Filter - Available for all views */}
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium">Member Category:</label>
+                <Select value={selectedMemberCategory} onValueChange={setSelectedMemberCategory}>
+                  <SelectTrigger className="w-40">
+                    <SelectValue placeholder="All Categories" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    {(memberCategories as any[])?.map((category: any) => (
+                      <SelectItem key={category.id} value={category.name}>
+                        {category.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Knowledge Area Filter - Available for Skills view only */}
+              {radarView === "skills" && (
                 <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium">Skill Category:</label>
-                  <Select value={selectedSkillCategory} onValueChange={setSelectedSkillCategory}>
+                  <label className="text-sm font-medium">Knowledge Area:</label>
+                  <Select value={selectedKnowledgeArea} onValueChange={setSelectedKnowledgeArea}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="All Areas" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Areas</SelectItem>
+                      {(knowledgeAreas as any[])?.map((area: any) => (
+                        <SelectItem key={area.id} value={area.name}>
+                          {area.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Category Filter - Available only for Skills view */}
+              {radarView === "skills" && (
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium">Category:</label>
+                  <Select value={selectedCategory} onValueChange={setSelectedCategory}>
                     <SelectTrigger className="w-40">
                       <SelectValue placeholder="All Categories" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Categories</SelectItem>
-                      {skillCategories && Array.isArray(skillCategories) && skillCategories.map((category: any) => (
+                      {(skillCategories as any[])?.map((category: any) => (
                         <SelectItem key={category.id} value={category.name}>
                           {category.name}
                         </SelectItem>
@@ -512,54 +567,20 @@ export default function Analytics() {
                 </div>
               )}
               
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium">Team Category:</label>
-                <Select value={selectedTeamCategory} onValueChange={setSelectedTeamCategory}>
-                  <SelectTrigger className="w-40">
-                    <SelectValue placeholder="All Teams" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Teams</SelectItem>
-                    {uniqueCategories.map((category) => (
-                      <SelectItem key={category} value={category}>
-                        {category}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium">Client:</label>
-                <Select value={selectedClient} onValueChange={setSelectedClient}>
-                  <SelectTrigger className="w-40">
-                    <SelectValue placeholder="All Clients" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Clients</SelectItem>
-                    {uniqueClients.map((client) => (
-                      <SelectItem key={client} value={client === "Talent Pool" ? "talent-pool" : client}>
-                        {client}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              {selectedSkillCategory !== "all" || selectedTeamCategory !== "all" || selectedClient !== "all" ? (
+              {/* Clear Filters */}
+              {(selectedMemberCategory !== "all" || selectedKnowledgeArea !== "all" || selectedCategory !== "all") && (
                 <Button 
                   variant="outline" 
                   size="sm"
                   onClick={() => {
-                    setSelectedSkillCategory("all");
-                    setSelectedTeamCategory("all");
-                    setSelectedClient("all");
-                    setSelectedMembers([]);
+                    setSelectedMemberCategory("all");
+                    setSelectedKnowledgeArea("all");
+                    setSelectedCategory("all");
                   }}
                 >
                   Clear Filters
                 </Button>
-              ) : null}
+              )}
             </div>
           </CardHeader>
           <CardContent>
@@ -594,7 +615,7 @@ export default function Analytics() {
                             <div className="bg-white dark:bg-gray-800 p-3 border rounded-lg shadow-lg">
                               <p className="font-medium">{data.category}</p>
                               <p className="text-blue-600">Level: {data.level}%</p>
-                              <p className="text-sm text-gray-500">{data.memberCount} members</p>
+                              <p className="text-gray-600 text-sm">{data.memberCount} members</p>
                             </div>
                           );
                         }
@@ -605,64 +626,44 @@ export default function Analytics() {
                 </ResponsiveContainer>
               </div>
             ) : (
-              <div className="h-80 flex items-center justify-center text-gray-500">
+              <div className="h-80 flex items-center justify-center text-gray-500 dark:text-gray-400">
                 <div className="text-center">
-                  <BarChart3 className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>No skill data available for the selected filters</p>
-                  <p className="text-sm">Try adjusting your filter criteria</p>
+                  <BarChart3 className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                  <p>No data available for the selected filters</p>
+                  <p className="text-sm">Try adjusting your filter selection</p>
                 </div>
               </div>
             )}
-            
-            <div className="text-xs text-gray-500 text-center mt-4">
-              {viewMode === "categories" 
-                ? `Showing average skill proficiency levels across all skill categories`
-                : viewMode === "skills"
-                ? `Showing individual skill proficiency levels${selectedSkillCategory !== "all" ? ` for ${selectedSkillCategory}` : ""}`
-                : `Showing skill proficiency levels grouped by knowledge areas`
-              }
-              {(selectedSkillCategory !== "all" || selectedTeamCategory !== "all" || selectedClient !== "all") && 
-                " (filtered view)"
-              }
-            </div>
           </CardContent>
         </Card>
 
-        {/* Charts Section */}
+        {/* Analytics Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Category Distribution */}
+          {/* Team Category Distribution */}
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center">
-                  <PieChart className="w-5 h-5 mr-2 text-primary" />
-                  Distribución por Categoría
-                </CardTitle>
-                <CardDescription>
-                  Distribución de Techies por nivel de experiencia
-                </CardDescription>
-              </div>
-              <Button variant="ghost" size="sm">
-                <Download className="w-4 h-4" />
-              </Button>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <PieChart className="w-5 h-5" />
+                Distribución por Categoría
+              </CardTitle>
+              <CardDescription>
+                Composición del equipo por nivel de experiencia
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              {membersLoading ? (
-                <div className="h-64 flex items-center justify-center">
-                  <div className="skeleton h-32 w-32 rounded-full"></div>
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height={250}>
+              <div className="h-80 w-full">
+                <ResponsiveContainer width="100%" height="100%">
                   <RechartsPieChart>
                     <Pie
                       data={categoryData}
-                      dataKey="value"
-                      nameKey="name"
                       cx="50%"
                       cy="50%"
+                      innerRadius={50}
                       outerRadius={80}
-                      fill="#8884d8"
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      paddingAngle={5}
+                      dataKey="value"
+                      label={({ name, value, percent }) => `${name}: ${value} (${(percent * 100).toFixed(0)}%)`}
+                      labelLine={true}
                     >
                       {categoryData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -671,80 +672,47 @@ export default function Analytics() {
                     <Tooltip />
                   </RechartsPieChart>
                 </ResponsiveContainer>
-              )}
+              </div>
             </CardContent>
           </Card>
 
           {/* Client Distribution */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center">
-                <BarChart3 className="w-5 h-5 mr-2 text-primary" />
-                Distribución por Cliente
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="w-5 h-5" />
+                Top 5 Clientes
               </CardTitle>
               <CardDescription>
-                Asignación actual de Techies por cliente
+                Los 5 clientes con mayor asignación de talento
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {membersLoading ? (
-                <div className="h-64 flex items-center justify-center">
-                  <div className="skeleton h-40 w-full"></div>
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height={250}>
-                  <BarChart data={clientData}>
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={clientData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} />
+                    <XAxis 
+                      dataKey="name" 
+                      angle={-45}
+                      textAnchor="end"
+                      height={100}
+                      tick={{ fontSize: 10 }}
+                    />
                     <YAxis />
                     <Tooltip />
-                    <Bar dataKey="value" fill="#3B82F6" />
+                    <Bar dataKey="value" fill="#3b82f6" />
                   </BarChart>
                 </ResponsiveContainer>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Skills and Goals Analysis */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Learning Goals by Skill */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Target className="w-5 h-5 mr-2 text-primary" />
-                Metas de Aprendizaje Populares
-              </CardTitle>
-              <CardDescription>
-                Habilidades más buscadas para desarrollo
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {goalsLoading ? (
-                <div className="space-y-3">
-                  {[...Array(6)].map((_, i) => (
-                    <div key={i} className="skeleton h-4 w-full"></div>
-                  ))}
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={goalsBySkill} layout="horizontal">
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis type="number" />
-                    <YAxis dataKey="name" type="category" width={100} />
-                    <Tooltip />
-                    <Bar dataKey="goals" fill="#10B981" />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
+              </div>
             </CardContent>
           </Card>
 
           {/* Top Performers */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center">
-                <Award className="w-5 h-5 mr-2 text-primary" />
+              <CardTitle className="flex items-center gap-2">
+                <Award className="w-5 h-5" />
                 Top Performers
               </CardTitle>
               <CardDescription>
@@ -752,170 +720,134 @@ export default function Analytics() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {membersLoading ? (
-                <div className="space-y-4">
-                  {[...Array(5)].map((_, i) => (
-                    <div key={i} className="flex items-center space-x-3">
-                      <div className="skeleton h-10 w-10 rounded-full"></div>
-                      <div className="flex-1">
-                        <div className="skeleton h-4 w-32 mb-1"></div>
-                        <div className="skeleton h-3 w-24"></div>
+              <div className="space-y-3">
+                {topPerformers.map((performer, index) => (
+                  <div key={performer.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm font-medium">
+                        {getInitials(performer.name)}
+                      </div>
+                      <div>
+                        <p className="font-medium text-gray-900 dark:text-white">{performer.name}</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">{performer.category}</p>
                       </div>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {topPerformers.map((performer, index) => (
-                    <div key={performer.name} className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-r from-yellow-400 to-orange-500 text-white text-sm font-bold">
-                          {index + 1}
-                        </div>
-                        <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-                          <span className="text-primary font-medium text-sm">
-                            {getInitials(performer.name)}
-                          </span>
-                        </div>
-                        <div>
-                          <div className="font-medium text-gray-900 dark:text-white">
-                            {performer.name}
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <Badge className={getCategoryColor(performer.category)} variant="secondary">
-                              {performer.category}
-                            </Badge>
-                            <span className="text-sm text-gray-500">
-                              {performer.client}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-lg font-bold text-primary">
-                          {performer.skillCount}
-                        </div>
-                        <div className="text-xs text-gray-500">skills</div>
-                      </div>
+                    <div className="text-right">
+                      <p className="font-bold text-lg text-blue-600">{performer.skills}</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">skills</p>
                     </div>
-                  ))}
-                </div>
-              )}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Learning Goals by Skill */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Target className="w-5 h-5" />
+                Metas de Aprendizaje Activas
+              </CardTitle>
+              <CardDescription>
+                Habilidades más demandadas para desarrollo
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {goalsBySkill.slice(0, topGoalsLimit).map((skill, index) => (
+                  <div key={skill.name} className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-xs font-medium">
+                        {index + 1}
+                      </div>
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">{skill.name}</span>
+                    </div>
+                    <Badge variant="secondary">{skill.goals} metas</Badge>
+                  </div>
+                ))}
+              </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Detailed Analysis */}
+        {/* Strengths and Gaps */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Company Strengths - Detailed */}
+          {/* Company Strengths */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center">
-                <TrendingUp className="w-5 h-5 mr-2 text-green-600" />
-                Fortalezas Detalladas
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="w-5 h-5" />
+                Fortalezas de la Empresa
               </CardTitle>
               <CardDescription>
-                Áreas donde tenemos mayor concentración de talento
+                Habilidades con mayor presencia en el equipo
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {strengthsLoading ? (
-                <div className="space-y-3">
-                  {[...Array(8)].map((_, i) => (
-                    <div key={i} className="skeleton h-6 w-full"></div>
-                  ))}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {companyStrengths?.slice(0, 8).map((strength: any, index: number) => (
+              <div className="space-y-3">
+                {strengthsLoading ? (
+                  <div className="space-y-2">
+                    {[...Array(5)].map((_, i) => (
+                      <div key={i} className="h-4 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
+                    ))}
+                  </div>
+                ) : (
+                  companyStrengths.slice(0, 10).map((strength: any, index: number) => (
                     <div key={strength.name} className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className="flex items-center justify-center w-6 h-6 rounded-full bg-green-100 text-green-600 text-xs font-bold">
+                      <div className="flex items-center gap-3">
+                        <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-medium">
                           {index + 1}
                         </div>
-                        <span className="font-medium text-gray-900 dark:text-white">
-                          {strength.name}
-                        </span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">{strength.name}</span>
                       </div>
-                      <div className="flex items-center space-x-3">
-                        <div className="w-32 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                          <div 
-                            className="bg-green-500 h-2 rounded-full transition-all duration-300" 
-                            style={{ width: `${strength.percentage}%` }}
-                          ></div>
-                        </div>
-                        <div className="text-right min-w-[80px]">
-                          <div className="text-sm font-medium text-gray-900 dark:text-white">
-                            {strength.count} personas
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {strength.percentage}% del equipo
-                          </div>
-                        </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">{strength.count} personas</span>
+                        <Badge variant="secondary">{strength.percentage}%</Badge>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
+                  ))
+                )}
+              </div>
             </CardContent>
           </Card>
 
-          {/* Skill Gaps - Detailed */}
+          {/* Skill Gaps */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center">
-                <TrendingDown className="w-5 h-5 mr-2 text-red-600" />
-                Oportunidades de Crecimiento
+              <CardTitle className="flex items-center gap-2">
+                <TrendingDown className="w-5 h-5" />
+                Brechas de Habilidades
               </CardTitle>
               <CardDescription>
-                Áreas con menor concentración de talento
+                Habilidades con menor presencia en el equipo
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {gapsLoading ? (
-                <div className="space-y-3">
-                  {[...Array(8)].map((_, i) => (
-                    <div key={i} className="skeleton h-6 w-full"></div>
-                  ))}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {skillGaps?.slice(0, 8).map((gap: any, index: number) => (
+              <div className="space-y-3">
+                {gapsLoading ? (
+                  <div className="space-y-2">
+                    {[...Array(5)].map((_, i) => (
+                      <div key={i} className="h-4 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
+                    ))}
+                  </div>
+                ) : (
+                  skillGaps.slice(0, 10).map((gap: any, index: number) => (
                     <div key={gap.name} className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className="flex items-center justify-center w-6 h-6 rounded-full bg-red-100 text-red-600 text-xs font-bold">
+                      <div className="flex items-center gap-3">
+                        <div className="w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs font-medium">
                           {index + 1}
                         </div>
-                        <span className="font-medium text-gray-900 dark:text-white">
-                          {gap.name}
-                        </span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">{gap.name}</span>
                       </div>
-                      <div className="flex items-center space-x-3">
-                        <div className="w-32 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                          <div 
-                            className="bg-red-500 h-2 rounded-full transition-all duration-300" 
-                            style={{ width: `${gap.percentage}%` }}
-                          ></div>
-                        </div>
-                        <div className="text-right min-w-[80px]">
-                          <div className="text-sm font-medium text-gray-900 dark:text-white">
-                            {gap.count} personas
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {gap.percentage}% del equipo
-                          </div>
-                        </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">{gap.count} personas</span>
+                        <Badge variant="destructive">{gap.percentage}%</Badge>
                       </div>
                     </div>
-                  ))}
-                  <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                    <Button className="w-full" variant="outline">
-                      <Target className="w-4 h-4 mr-2" />
-                      Crear Plan de Desarrollo
-                    </Button>
-                  </div>
-                </div>
-              )}
+                  ))
+                )}
+              </div>
             </CardContent>
           </Card>
         </div>

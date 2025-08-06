@@ -1,13 +1,17 @@
 import {
-  knowledgeAreas, skillCategories, skills, scales, members, memberProfiles, 
-  memberSkills, learningGoals,
+  knowledgeAreas, skillCategories, skills, scales, clients, categories, locations, members, memberProfiles, 
+  memberSkills, learningGoalStatuses, learningGoals,
   type KnowledgeArea, type InsertKnowledgeArea,
   type SkillCategory, type InsertSkillCategory,
   type Skill, type InsertSkill,
   type Scale, type InsertScale,
+  type Client, type InsertClient,
+  type Category, type InsertCategory,
+  type Location, type InsertLocation,
   type Member, type InsertMember,
   type MemberProfile, type InsertMemberProfile,
   type MemberSkill, type InsertMemberSkill,
+  type LearningGoalStatus, type InsertLearningGoalStatus,
   type LearningGoal, type InsertLearningGoal,
   type MemberWithSkills, type SkillWithDetails
 } from "@shared/schema";
@@ -42,6 +46,41 @@ export interface IStorage {
   updateScale(id: number, data: Partial<InsertScale>): Promise<Scale | undefined>;
   deleteScale(id: number): Promise<boolean>;
 
+  // Clients
+  getClients(): Promise<Client[]>;
+  getClient(id: number): Promise<Client | undefined>;
+  createClient(data: InsertClient): Promise<Client>;
+  updateClient(id: number, data: Partial<InsertClient>): Promise<Client | undefined>;
+  deleteClient(id: number): Promise<boolean>;
+
+  // Categories
+  getCategories(): Promise<Category[]>;
+  getCategory(id: number): Promise<Category | undefined>;
+  createCategory(data: InsertCategory): Promise<Category>;
+  updateCategory(id: number, data: Partial<InsertCategory>): Promise<Category | undefined>;
+  deleteCategory(id: number): Promise<boolean>;
+
+  // Locations
+  getLocations(): Promise<Location[]>;
+  getLocation(id: number): Promise<Location | undefined>;
+  createLocation(data: InsertLocation): Promise<Location>;
+  updateLocation(id: number, data: Partial<InsertLocation>): Promise<Location | undefined>;
+  deleteLocation(id: number): Promise<boolean>;
+
+  // Categories
+  getCategories(): Promise<Category[]>;
+  getCategory(id: number): Promise<Category | undefined>;
+  createCategory(data: InsertCategory): Promise<Category>;
+  updateCategory(id: number, data: Partial<InsertCategory>): Promise<Category | undefined>;
+  deleteCategory(id: number): Promise<boolean>;
+
+  // Locations
+  getLocations(): Promise<Location[]>;
+  getLocation(id: number): Promise<Location | undefined>;
+  createLocation(data: InsertLocation): Promise<Location>;
+  updateLocation(id: number, data: Partial<InsertLocation>): Promise<Location | undefined>;
+  deleteLocation(id: number): Promise<boolean>;
+
   // Members
   getMembers(): Promise<MemberWithSkills[]>;
   getMember(id: number): Promise<MemberWithSkills | undefined>;
@@ -61,8 +100,15 @@ export interface IStorage {
   updateMemberSkill(id: number, data: Partial<InsertMemberSkill>): Promise<MemberSkill | undefined>;
   deleteMemberSkill(id: number): Promise<boolean>;
 
+  // Learning Goal Statuses
+  getLearningGoalStatuses(): Promise<LearningGoalStatus[]>;
+  getLearningGoalStatus(id: number): Promise<LearningGoalStatus | undefined>;
+  createLearningGoalStatus(data: InsertLearningGoalStatus): Promise<LearningGoalStatus>;
+  updateLearningGoalStatus(id: number, data: Partial<InsertLearningGoalStatus>): Promise<LearningGoalStatus | undefined>;
+  deleteLearningGoalStatus(id: number): Promise<boolean>;
+
   // Learning Goals
-  getLearningGoals(memberId?: number): Promise<(LearningGoal & { skill: Skill; member: Member })[]>;
+  getLearningGoals(memberId?: number): Promise<(LearningGoal & { skill: Skill; member: Member; status?: LearningGoalStatus })[]>;
   createLearningGoal(data: InsertLearningGoal): Promise<LearningGoal>;
   updateLearningGoal(id: number, data: Partial<InsertLearningGoal>): Promise<LearningGoal | undefined>;
   deleteLearningGoal(id: number): Promise<boolean>;
@@ -87,7 +133,8 @@ export interface IStorage {
   }): Promise<MemberWithSkills[]>;
 }
 
-export class MemStorage implements IStorage {
+export class MemStorage {
+  // Note: MemStorage is deprecated - using JSON storage for Client model support
   private knowledgeAreasData: Map<number, KnowledgeArea> = new Map();
   private skillCategoriesData: Map<number, SkillCategory> = new Map();
   private skillsData: Map<number, Skill> = new Map();
@@ -160,78 +207,78 @@ export class MemStorage implements IStorage {
     // Initialize Skills
     const skills = [
       // Programming Languages
-      { id: 1, name: "JavaScript", purpose: "Web development and full-stack applications", categoryId: 1, knowledgeAreaId: 7 },
-      { id: 2, name: "Python", purpose: "Backend development, data science, and automation", categoryId: 1, knowledgeAreaId: 1 },
-      { id: 3, name: "Java", purpose: "Enterprise applications and backend systems", categoryId: 1, knowledgeAreaId: 1 },
-      { id: 4, name: "TypeScript", purpose: "Type-safe JavaScript development", categoryId: 1, knowledgeAreaId: 7 },
-      { id: 5, name: "C#", purpose: ".NET development and enterprise applications", categoryId: 1, knowledgeAreaId: 1 },
-      { id: 6, name: "Go", purpose: "High-performance backend services", categoryId: 1, knowledgeAreaId: 1 },
-      { id: 7, name: "Rust", purpose: "System programming and performance-critical applications", categoryId: 1, knowledgeAreaId: 1 },
-      { id: 8, name: "Swift", purpose: "iOS and macOS application development", categoryId: 1, knowledgeAreaId: 6 },
-      { id: 9, name: "Kotlin", purpose: "Android development and JVM applications", categoryId: 1, knowledgeAreaId: 6 },
+      { id: 1, name: "JavaScript", purpose: "Web development and full-stack applications", categoryId: 1, knowledgeAreaId: 7, strategicPriority: false },
+      { id: 2, name: "Python", purpose: "Backend development, data science, and automation", categoryId: 1, knowledgeAreaId: 1, strategicPriority: true },
+      { id: 3, name: "Java", purpose: "Enterprise applications and backend systems", categoryId: 1, knowledgeAreaId: 1, strategicPriority: true },
+      { id: 4, name: "TypeScript", purpose: "Type-safe JavaScript development", categoryId: 1, knowledgeAreaId: 7, strategicPriority: true },
+      { id: 5, name: "C#", purpose: ".NET development and enterprise applications", categoryId: 1, knowledgeAreaId: 1, strategicPriority: false },
+      { id: 6, name: "Go", purpose: "High-performance backend services", categoryId: 1, knowledgeAreaId: 1, strategicPriority: false },
+      { id: 7, name: "Rust", purpose: "System programming and performance-critical applications", categoryId: 1, knowledgeAreaId: 1, strategicPriority: false },
+      { id: 8, name: "Swift", purpose: "iOS and macOS application development", categoryId: 1, knowledgeAreaId: 6, strategicPriority: false },
+      { id: 9, name: "Kotlin", purpose: "Android development and JVM applications", categoryId: 1, knowledgeAreaId: 6, strategicPriority: false },
 
       // Frameworks
-      { id: 10, name: "React", purpose: "Frontend user interface development", categoryId: 2, knowledgeAreaId: 7 },
-      { id: 11, name: "Angular", purpose: "Enterprise frontend applications", categoryId: 2, knowledgeAreaId: 7 },
-      { id: 12, name: "Vue.js", purpose: "Progressive frontend development", categoryId: 2, knowledgeAreaId: 7 },
-      { id: 13, name: "Node.js", purpose: "Server-side JavaScript applications", categoryId: 2, knowledgeAreaId: 7 },
-      { id: 14, name: "Django", purpose: "Python web application development", categoryId: 2, knowledgeAreaId: 1 },
-      { id: 15, name: "Spring Boot", purpose: "Java enterprise application development", categoryId: 2, knowledgeAreaId: 1 },
-      { id: 16, name: "React Native", purpose: "Cross-platform mobile development", categoryId: 2, knowledgeAreaId: 6 },
-      { id: 17, name: "Flutter", purpose: "Cross-platform mobile and web development", categoryId: 2, knowledgeAreaId: 6 },
+      { id: 10, name: "React", purpose: "Frontend user interface development", categoryId: 2, knowledgeAreaId: 7, strategicPriority: true },
+      { id: 11, name: "Angular", purpose: "Enterprise frontend applications", categoryId: 2, knowledgeAreaId: 7, strategicPriority: true },
+      { id: 12, name: "Vue.js", purpose: "Progressive frontend development", categoryId: 2, knowledgeAreaId: 7, strategicPriority: true },
+      { id: 13, name: "Node.js", purpose: "Server-side JavaScript applications", categoryId: 2, knowledgeAreaId: 7, strategicPriority: true },
+      { id: 14, name: "Django", purpose: "Python web application development", categoryId: 2, knowledgeAreaId: 1, strategicPriority: true },
+      { id: 15, name: "Spring Boot", purpose: "Java enterprise application development", categoryId: 2, knowledgeAreaId: 1, strategicPriority: true },
+      { id: 16, name: "React Native", purpose: "Cross-platform mobile development", categoryId: 2, knowledgeAreaId: 6, strategicPriority: false },
+      { id: 17, name: "Flutter", purpose: "Cross-platform mobile and web development", categoryId: 2, knowledgeAreaId: 6, strategicPriority: false },
 
       // Cloud Platforms
-      { id: 18, name: "AWS", purpose: "Amazon Web Services cloud platform", categoryId: 5, knowledgeAreaId: 3 },
-      { id: 19, name: "Azure", purpose: "Microsoft Azure cloud platform", categoryId: 5, knowledgeAreaId: 3 },
-      { id: 20, name: "Google Cloud Platform", purpose: "Google's cloud computing services", categoryId: 5, knowledgeAreaId: 3 },
+      { id: 18, name: "AWS", purpose: "Amazon Web Services cloud platform", categoryId: 5, knowledgeAreaId: 3, strategicPriority: true },
+      { id: 19, name: "Azure", purpose: "Microsoft Azure cloud platform", categoryId: 5, knowledgeAreaId: 3, strategicPriority: false },
+      { id: 20, name: "Google Cloud Platform", purpose: "Google's cloud computing services", categoryId: 5, knowledgeAreaId: 3, strategicPriority: false },
 
       // Databases
-      { id: 21, name: "PostgreSQL", purpose: "Advanced relational database management", categoryId: 4, knowledgeAreaId: 8 },
-      { id: 22, name: "MongoDB", purpose: "NoSQL document database", categoryId: 4, knowledgeAreaId: 8 },
-      { id: 23, name: "Redis", purpose: "In-memory data structure store", categoryId: 4, knowledgeAreaId: 8 },
-      { id: 24, name: "MySQL", purpose: "Popular relational database system", categoryId: 4, knowledgeAreaId: 8 },
+      { id: 21, name: "PostgreSQL", purpose: "Advanced relational database management", categoryId: 4, knowledgeAreaId: 8, strategicPriority: true },
+      { id: 22, name: "MongoDB", purpose: "NoSQL document database", categoryId: 4, knowledgeAreaId: 8, strategicPriority: false },
+      { id: 23, name: "Redis", purpose: "In-memory data structure store", categoryId: 4, knowledgeAreaId: 8, strategicPriority: true },
+      { id: 24, name: "MySQL", purpose: "Popular relational database system", categoryId: 4, knowledgeAreaId: 8, strategicPriority: false },
 
       // DevOps Tools
-      { id: 25, name: "Docker", purpose: "Containerization and deployment", categoryId: 10, knowledgeAreaId: 4 },
-      { id: 26, name: "Kubernetes", purpose: "Container orchestration", categoryId: 10, knowledgeAreaId: 4 },
-      { id: 27, name: "Jenkins", purpose: "Continuous integration and deployment", categoryId: 10, knowledgeAreaId: 4 },
-      { id: 28, name: "GitLab CI/CD", purpose: "Integrated DevOps platform", categoryId: 10, knowledgeAreaId: 4 },
+      { id: 25, name: "Docker", purpose: "Containerization and deployment", categoryId: 10, knowledgeAreaId: 4, strategicPriority: true },
+      { id: 26, name: "Kubernetes", purpose: "Container orchestration", categoryId: 10, knowledgeAreaId: 4, strategicPriority: true },
+      { id: 27, name: "Jenkins", purpose: "Continuous integration and deployment", categoryId: 10, knowledgeAreaId: 4, strategicPriority: true },
+      { id: 28, name: "GitLab CI/CD", purpose: "Integrated DevOps platform", categoryId: 10, knowledgeAreaId: 4, strategicPriority: false },
 
       // Development Tools
-      { id: 29, name: "Git", purpose: "Version control and collaboration", categoryId: 3, knowledgeAreaId: 1 },
-      { id: 30, name: "VS Code", purpose: "Code editor and development environment", categoryId: 3, knowledgeAreaId: 1 },
-      { id: 31, name: "IntelliJ IDEA", purpose: "Java and multi-language IDE", categoryId: 3, knowledgeAreaId: 1 },
-      { id: 32, name: "Figma", purpose: "UI/UX design and prototyping", categoryId: 3, knowledgeAreaId: 12 },
+      { id: 29, name: "Git", purpose: "Version control and collaboration", categoryId: 3, knowledgeAreaId: 1, strategicPriority: true },
+      { id: 30, name: "VS Code", purpose: "Code editor and development environment", categoryId: 3, knowledgeAreaId: 1, strategicPriority: false },
+      { id: 31, name: "IntelliJ IDEA", purpose: "Java and multi-language IDE", categoryId: 3, knowledgeAreaId: 1, strategicPriority: false },
+      { id: 32, name: "Figma", purpose: "UI/UX design and prototyping", categoryId: 3, knowledgeAreaId: 12, strategicPriority: false },
 
       // Testing
-      { id: 33, name: "Jest", purpose: "JavaScript testing framework", categoryId: 8, knowledgeAreaId: 7 },
-      { id: 34, name: "Cypress", purpose: "End-to-end testing", categoryId: 8, knowledgeAreaId: 7 },
-      { id: 35, name: "JUnit", purpose: "Java unit testing framework", categoryId: 8, knowledgeAreaId: 1 },
+      { id: 33, name: "Jest", purpose: "JavaScript testing framework", categoryId: 8, knowledgeAreaId: 7, strategicPriority: false },
+      { id: 34, name: "Cypress", purpose: "End-to-end testing", categoryId: 8, knowledgeAreaId: 7, strategicPriority: false },
+      { id: 35, name: "JUnit", purpose: "Java unit testing framework", categoryId: 8, knowledgeAreaId: 1, strategicPriority: false },
 
       // Methodologies
-      { id: 36, name: "Agile", purpose: "Iterative software development methodology", categoryId: 6, knowledgeAreaId: 10 },
-      { id: 37, name: "Scrum", purpose: "Agile project management framework", categoryId: 6, knowledgeAreaId: 10 },
-      { id: 38, name: "DevOps", purpose: "Development and operations integration", categoryId: 6, knowledgeAreaId: 4 },
+      { id: 36, name: "Agile", purpose: "Iterative software development methodology", categoryId: 6, knowledgeAreaId: 10, strategicPriority: true },
+      { id: 37, name: "Scrum", purpose: "Agile project management framework", categoryId: 6, knowledgeAreaId: 10, strategicPriority: true },
+      { id: 38, name: "DevOps", purpose: "Development and operations integration", categoryId: 6, knowledgeAreaId: 4, strategicPriority: false },
 
       // Architecture
-      { id: 39, name: "Microservices", purpose: "Distributed system architecture", categoryId: 7, knowledgeAreaId: 1 },
-      { id: 40, name: "RESTful APIs", purpose: "Web service architecture", categoryId: 7, knowledgeAreaId: 7 },
-      { id: 41, name: "GraphQL", purpose: "Query language for APIs", categoryId: 7, knowledgeAreaId: 7 },
+      { id: 39, name: "Microservices", purpose: "Distributed system architecture", categoryId: 7, knowledgeAreaId: 1, strategicPriority: true },
+      { id: 40, name: "RESTful APIs", purpose: "Web service architecture", categoryId: 7, knowledgeAreaId: 7, strategicPriority: false },
+      { id: 41, name: "GraphQL", purpose: "Query language for APIs", categoryId: 7, knowledgeAreaId: 7, strategicPriority: true },
 
       // AI/ML
-      { id: 42, name: "TensorFlow", purpose: "Machine learning framework", categoryId: 2, knowledgeAreaId: 9 },
-      { id: 43, name: "PyTorch", purpose: "Deep learning framework", categoryId: 2, knowledgeAreaId: 9 },
-      { id: 44, name: "Scikit-learn", purpose: "Machine learning library for Python", categoryId: 2, knowledgeAreaId: 9 },
+      { id: 42, name: "TensorFlow", purpose: "Machine learning framework", categoryId: 2, knowledgeAreaId: 9, strategicPriority: true },
+      { id: 43, name: "PyTorch", purpose: "Deep learning framework", categoryId: 2, knowledgeAreaId: 9, strategicPriority: false },
+      { id: 44, name: "Scikit-learn", purpose: "Machine learning library for Python", categoryId: 2, knowledgeAreaId: 9, strategicPriority: false },
 
       // Soft Skills
-      { id: 45, name: "Technical Communication", purpose: "Explaining technical concepts clearly", categoryId: 11, knowledgeAreaId: 10 },
-      { id: 46, name: "Team Leadership", purpose: "Leading and motivating development teams", categoryId: 12, knowledgeAreaId: 10 },
-      { id: 47, name: "Mentoring", purpose: "Guiding junior developers", categoryId: 12, knowledgeAreaId: 10 },
-      { id: 48, name: "Client Presentation", purpose: "Presenting solutions to stakeholders", categoryId: 11, knowledgeAreaId: 11 },
+      { id: 45, name: "Technical Communication", purpose: "Explaining technical concepts clearly", categoryId: 11, knowledgeAreaId: 10, strategicPriority: false },
+      { id: 46, name: "Team Leadership", purpose: "Leading and motivating development teams", categoryId: 12, knowledgeAreaId: 10, strategicPriority: false },
+      { id: 47, name: "Mentoring", purpose: "Guiding junior developers", categoryId: 12, knowledgeAreaId: 10, strategicPriority: false },
+      { id: 48, name: "Client Presentation", purpose: "Presenting solutions to stakeholders", categoryId: 11, knowledgeAreaId: 11, strategicPriority: false },
 
       // Security
-      { id: 49, name: "OAuth 2.0", purpose: "Authentication and authorization", categoryId: 9, knowledgeAreaId: 5 },
-      { id: 50, name: "OWASP", purpose: "Web application security practices", categoryId: 9, knowledgeAreaId: 5 }
+      { id: 49, name: "OAuth 2.0", purpose: "Authentication and authorization", categoryId: 9, knowledgeAreaId: 5, strategicPriority: false },
+      { id: 50, name: "OWASP", purpose: "Web application security practices", categoryId: 9, knowledgeAreaId: 5, strategicPriority: false }
     ];
     skills.forEach(skill => this.skillsData.set(skill.id, skill));
     this.currentSkillId = 51;
@@ -702,39 +749,62 @@ export class MemStorage implements IStorage {
     const skillCounts = new Map<string, number>();
     const totalMembers = this.membersData.size;
 
+    // Get all strategic priority skills
+    const strategicSkills = Array.from(this.skillsData.values()).filter(skill => skill.strategicPriority);
+
+    // Initialize strategic skills with 0 count
+    strategicSkills.forEach(skill => {
+      skillCounts.set(skill.name, 0);
+    });
+
+    // Count member skills for strategic priorities only
     for (const memberSkill of this.memberSkillsData.values()) {
       const skill = this.skillsData.get(memberSkill.skillId!);
-      if (skill) {
+      if (skill && skill.strategicPriority) {
         skillCounts.set(skill.name, (skillCounts.get(skill.name) || 0) + 1);
       }
     }
 
+    // Return strategic skills sorted by lowest adoption (biggest gaps)
+    // Filter to show skills with less than 50% adoption rate to focus on real gaps
     return Array.from(skillCounts.entries())
       .map(([name, count]) => ({
         name,
         count,
         percentage: totalMembers > 0 ? Math.round((count / totalMembers) * 100) : 0
       }))
-      .sort((a, b) => a.count - b.count)
+      .filter(skill => skill.percentage < 50) // Only show skills with low adoption
+      .sort((a, b) => a.count - b.count) // Sort by lowest count first (biggest gaps)
       .slice(0, 10);
   }
 
   async getStats(): Promise<{
     totalMembers: number;
-    activeSkills: number;
-    talentPool: number;
-    learningGoals: number;
+    totalSkills: number;
+    totalLearningGoals: number;
+    activeClients: number;
   }> {
     const totalMembers = this.membersData.size;
     const activeSkills = new Set(Array.from(this.memberSkillsData.values()).map(ms => ms.skillId)).size;
-    const talentPool = Array.from(this.membersData.values()).filter(m => m.currentClient === "Talent Pool").length;
-    const learningGoals = Array.from(this.learningGoalsData.values()).filter(lg => lg.status === "active").length;
+    const activeLearningGoals = Array.from(this.learningGoalsData.values()).filter(lg => lg.status === "active").length;
+    
+    // Count unique active clients from member profiles client history
+    const activeClients = new Set();
+    Array.from(this.memberProfilesData.values()).forEach(profile => {
+      if (profile.clientHistory && Array.isArray(profile.clientHistory)) {
+        profile.clientHistory.forEach((history: any) => {
+          if (history.clientId && history.clientId !== "talent-pool") {
+            activeClients.add(history.clientId);
+          }
+        });
+      }
+    });
 
     return {
       totalMembers,
-      activeSkills,
-      talentPool,
-      learningGoals
+      totalSkills: activeSkills,
+      totalLearningGoals: activeLearningGoals,
+      activeClients: activeClients.size
     };
   }
 

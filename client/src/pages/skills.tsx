@@ -6,65 +6,95 @@ import { z } from "zod";
 import { useLanguage } from "@/hooks/use-language";
 import Header from "@/components/layout/header";
 import DataTable from "@/components/ui/data-table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import { useAutoToast } from "@/hooks/use-auto-toast";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { apiRequest } from "@/lib/queryClient";
-import { Plus, Trash2, Edit2, ChevronLeft, ChevronRight } from "lucide-react";
-import type { SkillWithDetails, KnowledgeArea, SkillCategory } from "@shared/schema";
+import { Badge } from "@/components/ui/badge";
+import { Edit2, Trash2 } from "lucide-react";
 
-const skillSchema = z.object({
-  name: z.string().min(1, "Name is required"),
+import { useAutoToast } from "@/hooks/use-auto-toast";
+import { apiRequest } from "@/lib/queryClient";
+
+import type { SkillWithDetails, SkillCategory, KnowledgeArea } from "@shared/schema";
+
+const skillFormSchema = z.object({
+  name: z.string().min(1, "Skill name is required"),
   purpose: z.string().optional(),
   categoryId: z.number().optional(),
   knowledgeAreaId: z.number().optional(),
+  strategicPriority: z.boolean().default(false),
 });
 
-type SkillFormData = z.infer<typeof skillSchema>;
+type SkillFormData = z.infer<typeof skillFormSchema>;
 
 export default function Skills() {
   const { t } = useLanguage();
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [skillToDelete, setSkillToDelete] = useState<SkillWithDetails | null>(null);
-  const [editingSkill, setEditingSkill] = useState<SkillWithDetails | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
   const { showToast } = useAutoToast();
   const queryClient = useQueryClient();
+  
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingSkill, setEditingSkill] = useState<SkillWithDetails | null>(null);
+  const [skillToDelete, setSkillToDelete] = useState<SkillWithDetails | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const form = useForm<SkillFormData>({
-    resolver: zodResolver(skillSchema),
+    resolver: zodResolver(skillFormSchema),
     defaultValues: {
       name: "",
       purpose: "",
+      strategicPriority: false,
     },
   });
 
-  // Fetch data
-  const { data: skills, isLoading: skillsLoading } = useQuery({
+  // Queries
+  const { data: skills = [], isLoading } = useQuery<SkillWithDetails[]>({
     queryKey: ["/api/skills"],
   });
 
-  const { data: knowledgeAreas } = useQuery({
-    queryKey: ["/api/knowledge-areas"],
-  });
+  // Filter and paginate skills
+  const filteredSkills = skills.filter((skill: SkillWithDetails) =>
+    skill.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    skill.purpose?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-  const { data: skillCategories } = useQuery({
+  const totalPages = Math.ceil(filteredSkills.length / pageSize);
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedSkills = filteredSkills.slice(startIndex, startIndex + pageSize);
+
+  // Reset page when search changes
+  const handleSearchChange = (term: string) => {
+    // Only reset page if search term actually changed
+    if (term !== searchTerm) {
+      setSearchTerm(term);
+      setCurrentPage(1);
+    }
+  };
+
+  // Handle page size change
+  const handlePageSizeChange = (newPageSize: string) => {
+    setPageSize(parseInt(newPageSize));
+    setCurrentPage(1);
+  };
+
+  const { data: skillCategories = [] } = useQuery<SkillCategory[]>({
     queryKey: ["/api/skill-categories"],
   });
 
+  const { data: knowledgeAreas = [] } = useQuery<KnowledgeArea[]>({
+    queryKey: ["/api/knowledge-areas"],
+  });
+
+  // Mutations
   const createSkillMutation = useMutation({
     mutationFn: async (data: SkillFormData) => {
-      const response = await apiRequest("POST", "/api/skills", data);
-      return response.json();
+      return apiRequest("POST", "/api/skills", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/skills"] });
@@ -86,8 +116,7 @@ export default function Skills() {
 
   const updateSkillMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: SkillFormData }) => {
-      const response = await apiRequest("PATCH", `/api/skills/${id}`, data);
-      return response.json();
+      return apiRequest("PATCH", `/api/skills/${id}`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/skills"] });
@@ -110,7 +139,7 @@ export default function Skills() {
 
   const deleteSkillMutation = useMutation({
     mutationFn: async (id: number) => {
-      await apiRequest("DELETE", `/api/skills/${id}`);
+      return apiRequest("DELETE", `/api/skills/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/skills"] });
@@ -120,81 +149,73 @@ export default function Skills() {
         description: "Skill deleted successfully",
       });
     },
+    onError: () => {
+      showToast({
+        title: "Error",
+        description: "Failed to delete skill",
+        variant: "destructive",
+      });
+    },
   });
 
-  // Filter and paginate skills
-  const allSkills = Array.isArray(skills) ? skills as SkillWithDetails[] : [];
-  const filteredSkills = allSkills.filter((skill: SkillWithDetails) =>
-    skill.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const totalPages = Math.ceil(filteredSkills.length / pageSize);
-  const startIndex = (currentPage - 1) * pageSize;
-  const paginatedSkills = filteredSkills.slice(startIndex, startIndex + pageSize);
-
-  // Reset page when search changes
-  const handleSearchChange = (term: string) => {
-    setSearchTerm(term);
-    setCurrentPage(1);
-  };
-
-  // Handle page size change
-  const handlePageSizeChange = (newPageSize: string) => {
-    setPageSize(parseInt(newPageSize));
-    setCurrentPage(1);
-  };
-
+  // Table columns
   const columns = [
     {
       key: "name",
       title: "Skill Name",
       render: (value: string, skill: SkillWithDetails) => (
-        <div>
-          <div className="font-medium text-gray-900 dark:text-white">{value}</div>
-          {skill.purpose && (
-            <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              {skill.purpose}
-            </div>
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-gray-900 dark:text-white">{value}</span>
+          {skill.strategicPriority && (
+            <Badge variant="default" className="bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
+              Strategic
+            </Badge>
           )}
         </div>
       ),
     },
     {
+      key: "purpose",
+      title: "Purpose",
+      render: (value: string) => (
+        <span className="text-gray-600 dark:text-gray-400">
+          {value || "-"}
+        </span>
+      ),
+    },
+    {
       key: "category",
       title: "Category",
-      render: (category: SkillCategory) => (
-        category ? (
-          <Badge variant="secondary">{category.name}</Badge>
-        ) : (
-          <span className="text-gray-400">-</span>
-        )
+      render: (category: SkillCategory | undefined) => (
+        <Badge variant="secondary">
+          {category?.name || "Uncategorized"}
+        </Badge>
       ),
     },
     {
       key: "knowledgeArea",
       title: "Knowledge Area",
-      render: (knowledgeArea: KnowledgeArea) => (
-        knowledgeArea ? (
-          <Badge variant="outline">{knowledgeArea.name}</Badge>
-        ) : (
-          <span className="text-gray-400">-</span>
-        )
+      render: (knowledgeArea: KnowledgeArea | undefined) => (
+        <Badge variant="outline">
+          {knowledgeArea?.name || "None"}
+        </Badge>
       ),
     },
     {
       key: "actions",
-      title: t("actions"),
+      title: "Actions",
       render: (_: any, skill: SkillWithDetails) => (
-        <div className="flex space-x-2">
-          <Button 
-            variant="ghost" 
+        <div className="flex items-center space-x-2">
+          <Button
+            variant="ghost"
             size="sm"
             onClick={() => handleEditSkill(skill)}
+            className="text-blue-600 hover:text-blue-700"
           >
             <Edit2 className="w-4 h-4" />
           </Button>
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             size="sm"
             onClick={() => setSkillToDelete(skill)}
             className="text-red-600 hover:text-red-700"
@@ -213,6 +234,7 @@ export default function Skills() {
       purpose: skill.purpose || "",
       categoryId: skill.categoryId || undefined,
       knowledgeAreaId: skill.knowledgeAreaId || undefined,
+      strategicPriority: skill.strategicPriority || false,
     });
     setShowEditModal(true);
   };
@@ -232,165 +254,136 @@ export default function Skills() {
       <Header
         title={t("skills")}
         subtitle="Gestiona las habilidades del equipo"
-        showActions={false}
+        onAddClick={() => setShowAddModal(true)}
+        addButtonText="Agregar Habilidad"
       />
 
       <main className="p-6">
-        <div className="flex justify-between items-center mb-6">
-          <div></div>
-          <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
-            <DialogTrigger asChild>
-              <Button 
-                className="bg-primary hover:bg-primary/90"
-                onClick={() => {
-                  form.reset({ name: "", purpose: "" });
-                  setShowAddModal(true);
-                }}
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add Skill
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add New Skill</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <div>
-                  <Label htmlFor="name">Skill Name *</Label>
-                  <Input
-                    id="name"
-                    {...form.register("name")}
-                    className={form.formState.errors.name ? "border-red-500" : ""}
-                  />
-                  {form.formState.errors.name && (
-                    <p className="text-red-500 text-sm mt-1">
-                      {form.formState.errors.name.message}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <Label htmlFor="purpose">Purpose</Label>
-                  <Textarea
-                    id="purpose"
-                    {...form.register("purpose")}
-                    placeholder="What is this skill used for?"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="categoryId">Category</Label>
-                  <Select
-                    value={form.watch("categoryId")?.toString()}
-                    onValueChange={(value) => form.setValue("categoryId", parseInt(value))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {skillCategories?.map((category: SkillCategory) => (
-                        <SelectItem key={category.id} value={category.id.toString()}>
-                          {category.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
-                  <Label htmlFor="knowledgeAreaId">Knowledge Area</Label>
-                  <Select
-                    value={form.watch("knowledgeAreaId")?.toString()}
-                    onValueChange={(value) => form.setValue("knowledgeAreaId", parseInt(value))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select knowledge area" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {knowledgeAreas?.map((area: KnowledgeArea) => (
-                        <SelectItem key={area.id} value={area.id.toString()}>
-                          {area.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="flex justify-end space-x-3 pt-4">
-                  <Button type="button" variant="outline" onClick={() => setShowAddModal(false)}>
-                    {t("cancel")}
-                  </Button>
-                  <Button type="submit" disabled={createSkillMutation.isPending}>
-                    {createSkillMutation.isPending ? "Saving..." : t("save")}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </div>
-
         <DataTable
           data={paginatedSkills}
           columns={columns}
           searchPlaceholder="Search skills..."
           onSearch={handleSearchChange}
-          isLoading={skillsLoading}
+          isLoading={isLoading}
+          currentPage={currentPage}
+          pageSize={pageSize}
+          totalItems={filteredSkills.length}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(newSize) => {
+            const newTotalPages = Math.ceil(filteredSkills.length / newSize);
+            setPageSize(newSize);
+            // Only reset to page 1 if current page would be out of bounds
+            if (currentPage > newTotalPages) {
+              setCurrentPage(Math.max(1, newTotalPages));
+            }
+          }}
+          paginationLabel="skills"
+          showPaginationDivider={false}
         />
-        
-        {/* Pagination Controls */}
-        <div className="flex items-center justify-between px-2 py-4">
-          <div className="flex items-center space-x-6 lg:space-x-8">
-            <div className="flex items-center space-x-2">
-              <p className="text-sm font-medium">Items per page</p>
-              <Select value={pageSize.toString()} onValueChange={handlePageSizeChange}>
-                <SelectTrigger className="h-8 w-[70px]">
-                  <SelectValue placeholder={pageSize} />
+      </main>
+
+      {/* Add Skill Modal */}
+      <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Skill</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <div>
+              <Label htmlFor="name">Skill Name *</Label>
+              <Input
+                id="name"
+                {...form.register("name")}
+                className={form.formState.errors.name ? "border-red-500" : ""}
+              />
+              {form.formState.errors.name && (
+                <p className="text-red-500 text-sm mt-1">
+                  {form.formState.errors.name.message}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <Label htmlFor="purpose">Purpose</Label>
+              <Textarea
+                id="purpose"
+                {...form.register("purpose")}
+                placeholder="What is this skill used for?"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="categoryId">Category</Label>
+              <Select
+                value={form.watch("categoryId")?.toString()}
+                onValueChange={(value) => form.setValue("categoryId", parseInt(value))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select category" />
                 </SelectTrigger>
-                <SelectContent side="top">
-                  <SelectItem value="10">10</SelectItem>
-                  <SelectItem value="20">20</SelectItem>
-                  <SelectItem value="50">50</SelectItem>
-                  <SelectItem value="100">100</SelectItem>
+                <SelectContent>
+                  {skillCategories.map((category) => (
+                    <SelectItem key={category.id} value={category.id.toString()}>
+                      {category.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex w-[100px] items-center justify-center text-sm font-medium">
-              Page {currentPage} of {totalPages}
-            </div>
-            <div className="text-sm text-gray-700 dark:text-gray-300">
-              Showing {startIndex + 1} to {Math.min(startIndex + pageSize, filteredSkills.length)} of {filteredSkills.length} skills
-            </div>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="outline"
-              className="h-8 w-8 p-0"
-              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-              disabled={currentPage <= 1}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              className="h-8 w-8 p-0"
-              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-              disabled={currentPage >= totalPages}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </main>
 
-      {/* Edit Modal */}
-      <Dialog open={showEditModal} onOpenChange={(open) => {
-        setShowEditModal(open);
-        if (!open) {
-          setEditingSkill(null);
-          form.reset();
-        }
-      }}>
+            <div>
+              <Label htmlFor="knowledgeAreaId">Knowledge Area</Label>
+              <Select
+                value={form.watch("knowledgeAreaId")?.toString()}
+                onValueChange={(value) => form.setValue("knowledgeAreaId", parseInt(value))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select knowledge area" />
+                </SelectTrigger>
+                <SelectContent>
+                  {knowledgeAreas.map((area) => (
+                    <SelectItem key={area.id} value={area.id.toString()}>
+                      {area.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="strategicPriority"
+                {...form.register("strategicPriority")}
+                className="rounded border-gray-300"
+              />
+              <Label htmlFor="strategicPriority" className="text-sm font-medium">
+                Strategic Priority
+                <span className="text-gray-500 text-xs block">Mark this skill as important for company development</span>
+              </Label>
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowAddModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={createSkillMutation.isPending}
+              >
+                {createSkillMutation.isPending ? "Creating..." : "Create Skill"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Skill Modal */}
+      <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Skill</DialogTitle>
@@ -430,7 +423,7 @@ export default function Skills() {
                   <SelectValue placeholder="Select a category" />
                 </SelectTrigger>
                 <SelectContent>
-                  {skillCategories?.map((category: SkillCategory) => (
+                  {skillCategories.map((category) => (
                     <SelectItem key={category.id} value={category.id.toString()}>
                       {category.name}
                     </SelectItem>
@@ -449,7 +442,7 @@ export default function Skills() {
                   <SelectValue placeholder="Select a knowledge area" />
                 </SelectTrigger>
                 <SelectContent>
-                  {knowledgeAreas?.map((area: KnowledgeArea) => (
+                  {knowledgeAreas.map((area) => (
                     <SelectItem key={area.id} value={area.id.toString()}>
                       {area.name}
                     </SelectItem>
@@ -458,19 +451,39 @@ export default function Skills() {
               </Select>
             </div>
 
-            <div className="flex justify-end space-x-3 pt-4">
-              <Button type="button" variant="outline" onClick={() => setShowEditModal(false)}>
-                {t("cancel")}
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="edit-strategicPriority"
+                {...form.register("strategicPriority")}
+                className="rounded border-gray-300"
+              />
+              <Label htmlFor="edit-strategicPriority" className="text-sm font-medium">
+                Strategic Priority
+                <span className="text-gray-500 text-xs block">Mark this skill as important for company development</span>
+              </Label>
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowEditModal(false)}
+              >
+                Cancel
               </Button>
-              <Button type="submit" disabled={updateSkillMutation.isPending}>
-                {updateSkillMutation.isPending ? "Updating..." : "Update"}
+              <Button
+                type="submit"
+                disabled={updateSkillMutation.isPending}
+              >
+                {updateSkillMutation.isPending ? "Updating..." : "Update Skill"}
               </Button>
             </div>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete Confirmation */}
       <AlertDialog open={!!skillToDelete} onOpenChange={() => setSkillToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>

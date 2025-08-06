@@ -188,4 +188,7 @@ function useToast() {
   }
 }
 
-export { useToast, toast }
+export { toast, useToast, type Toast };
+
+// Re-export useAutoToast from use-auto-toast
+export { useAutoToast } from './use-auto-toast';
