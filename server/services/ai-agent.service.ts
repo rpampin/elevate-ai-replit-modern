@@ -2,11 +2,20 @@ import OpenAI from "openai";
 import { storage } from "../storage";
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 
 export class AIAgentService {
   static async processQuery(userQuery: string) {
     try {
+      // Check if OpenAI is available
+      if (!openai) {
+        return {
+          response: "AI Assistant is currently unavailable. Please configure an OpenAI API key to enable AI-powered responses. In the meantime, you can browse the team members, skills, and analytics sections directly.",
+          queryProcessed: userQuery,
+          timestamp: new Date().toISOString()
+        };
+      }
+
       // Get all data needed for context
       const [members, skills, skillCategories, knowledgeAreas, learningGoals] = await Promise.all([
         storage.getMembers(),
@@ -97,6 +106,17 @@ Respond with helpful, accurate information based on the real data provided. Be s
 
   static async suggestQuestions() {
     try {
+      // If OpenAI is not available, return default suggestions
+      if (!openai) {
+        return [
+          "Who has the most JavaScript experience?",
+          "Which team members are available for new projects?",
+          "What are our strongest technical skills as a company?",
+          "Who should I assign to a React project?",
+          "What skills do we need to develop more?"
+        ];
+      }
+
       const [members, skills] = await Promise.all([
         storage.getMembers(),
         storage.getSkills()
